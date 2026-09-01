@@ -21,9 +21,9 @@ static QString locateDatasetRoot()
     return DatasetManager::findDatasetRoot(candidates);
 }
 
-// 批处理模式：--batch <类别目录或类别名>
+// 批处理模式：--batch <类别目录或类别名> [--engine cv|dl]
 // 不弹窗、不进入事件循环，跑完打印指标到 stdout 后退出。
-static int runBatch(const QString& categoryArg)
+static int runBatch(const QString& categoryArg, EngineKind engineKind)
 {
     QTextStream out(stdout);
 
@@ -47,6 +47,7 @@ static int runBatch(const QString& categoryArg)
     }
 
     DetectionController ctrl;
+    ctrl.setEngineKind(engineKind);
     if (!ctrl.loadDataset(datasetRoot)) {
         out << "ERROR: 数据集根目录扫描失败：" << datasetRoot << "\n";
         return 2;
@@ -60,9 +61,16 @@ static int runBatch(const QString& categoryArg)
 
     out << "数据集根: " << dataset.rootPath() << "\n";
     out << "类别: " << category << "\n";
+    out << "引擎: " << (engineKind == EngineKind::DL ? QStringLiteral("dl (EfficientAD)")
+                                                    : QStringLiteral("cv (传统)")) << "\n";
 
     if (!ctrl.prepareEngine(category)) {
-        out << "ERROR: 无法构建参考模板（" << category << "/train/good 为空或不可读）\n";
+        out << "ERROR: 无法构建参考模型（" << category
+            << (engineKind == EngineKind::DL
+                    ? QStringLiteral(" 的 ONNX 模型缺失或良品图不可读；"
+                                     "先跑 tools/training/train_efficientad.py")
+                    : QStringLiteral("/train/good 为空或不可读）"))
+            << "\n";
         return 2;
     }
     out << "参考模板已构建（train/good 共 "
@@ -147,11 +155,23 @@ int main(int argc, char* argv[])
     const int batchIdx = args.indexOf(QStringLiteral("--batch"));
     if (batchIdx >= 0) {
         if (batchIdx + 1 >= args.size()) {
-            QTextStream(stderr) << "用法: surface_defect_detector --batch <类别目录或类别名>\n";
+            QTextStream(stderr) << "用法: surface_defect_detector --batch <类别目录或类别名> [--engine cv|dl]\n";
             return 2;
         }
+        // 引擎选择：默认 cv（传统基线），dl = EfficientAD ONNX
+        EngineKind engineKind = EngineKind::Traditional;
+        const int engineIdx = args.indexOf(QStringLiteral("--engine"));
+        if (engineIdx >= 0 && engineIdx + 1 < args.size()) {
+            const QString v = args.at(engineIdx + 1);
+            if (v == QStringLiteral("dl"))
+                engineKind = EngineKind::DL;
+            else if (v != QStringLiteral("cv")) {
+                QTextStream(stderr) << "未知引擎: " << v << "（可选 cv|dl）\n";
+                return 2;
+            }
+        }
         // 批处理：跑完即退，不进入事件循环
-        return runBatch(args.at(batchIdx + 1));
+        return runBatch(args.at(batchIdx + 1), engineKind);
     }
 
     // GUI 模式

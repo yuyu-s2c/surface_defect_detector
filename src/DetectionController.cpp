@@ -1,8 +1,11 @@
 #include "DetectionController.h"
 
 #include "DetectionEngine.h"
+#include "DLDetectionEngine.h"
 
 #include <opencv2/imgcodecs.hpp>
+
+#include <QtDebug>
 
 DetectionController::DetectionController(QObject* parent)
     : QObject(parent)
@@ -24,19 +27,37 @@ bool DetectionController::loadDataset(const QString& rootPath)
     return true;
 }
 
+void DetectionController::setEngineKind(EngineKind kind)
+{
+    if (m_engineKind == kind)
+        return;
+    m_engineKind = kind;
+    // 引擎类型变了，已缓存的引擎实现全部失效
+    qDeleteAll(m_engines);
+    m_engines.clear();
+}
+
 IDetectionEngine* DetectionController::engineFor(const QString& category)
 {
     IDetectionEngine* engine = m_engines.value(category, nullptr);
     if (engine)
         return engine;
-    // 当前只有传统 CV 引擎；Phase 2 在此按配置选择 DL 引擎实现
-    auto* cvEngine = new DetectionEngine;
-    if (!cvEngine->buildReference(m_dataset.trainGoodImages(category))) {
-        delete cvEngine;
+
+    IDetectionEngine* newEngine = nullptr;
+    if (m_engineKind == EngineKind::DL) {
+        // 训练侧导出约定：models/<类别>/<类别>.onnx（train_efficientad.py 产物）
+        const QString modelPath = QStringLiteral("%1/models/%2/%2.onnx")
+                                      .arg(m_dataset.rootPath(), category);
+        newEngine = new DLDetectionEngine(modelPath);
+    } else {
+        newEngine = new DetectionEngine;
+    }
+    if (!newEngine->buildReference(m_dataset.trainGoodImages(category))) {
+        delete newEngine;
         return nullptr;
     }
-    m_engines.insert(category, cvEngine);
-    return cvEngine;
+    m_engines.insert(category, newEngine);
+    return newEngine;
 }
 
 bool DetectionController::prepareEngine(const QString& category)

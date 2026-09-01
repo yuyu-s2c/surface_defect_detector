@@ -10,6 +10,9 @@
 
 #include <opencv2/core.hpp>
 
+// 检测引擎类型：传统 CV 基线 / 深度学习（EfficientAD ONNX）
+enum class EngineKind { Traditional, DL };
+
 // 一个类别的批量评估结果（按缺陷类型累积）
 struct BatchMetrics
 {
@@ -36,6 +39,11 @@ public:
     // 数据集只读访问（树填充、GT 掩码路径查询用）
     const DatasetManager& dataset() const { return m_dataset; }
 
+    // 切换检测引擎类型（默认 Traditional）。切换会丢弃已缓存的引擎，
+    // 需在 prepareEngine/detect 之前调用。
+    void setEngineKind(EngineKind kind);
+    EngineKind engineKind() const { return m_engineKind; }
+
     // 确保该类别的检测引擎已构建（参考模型构建需读全部良品图，较耗时，
     // 故惰性构建并缓存；构建失败不缓存）。供调用方做显式错误提示。
     bool prepareEngine(const QString& category);
@@ -59,4 +67,5 @@ private:
 
     DatasetManager m_dataset;
     QMap<QString, IDetectionEngine*> m_engines; // 类别 -> 引擎
+    EngineKind m_engineKind = EngineKind::Traditional;
 };

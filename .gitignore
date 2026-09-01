@@ -8,3 +8,7 @@ models/
 # MVTec AD 数据集（约 700MB，CC BY-NC-SA 许可，不入库，本地保留）
 metal_nut/
 screw/
+
+# Phase 2 训练侧：Python venv 与下载缓存（anomalib 预训练权重、imagenette）
+tools/training/.venv/
+tools/training/.cache/

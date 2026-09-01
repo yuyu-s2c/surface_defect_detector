@@ -12,6 +12,11 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets)
 # OpenCV-MinGW-Build 预编译包，OpenCVConfig.cmake 位于 x64/mingw/lib
 find_package(OpenCV REQUIRED PATHS "${CMAKE_SOURCE_DIR}/third_party/opencv/x64/mingw/lib")
 
+# ONNX Runtime（Phase 2 DL 推理）：官方 MSVC 构建，C ABI 与 MinGW 兼容。
+# GNU ld 直接以 onnxruntime.dll 为链接输入自动生成导入项（已用 tools/ort_demo 验证），
+# 不使用 MSVC 的 .lib 导入库。
+set(ONNXRUNTIME_DIR "${CMAKE_SOURCE_DIR}/third_party/onnxruntime")
+
 set(PROJECT_SOURCES
     src/main.cpp
     src/MainWindow.h
@@ -23,6 +28,8 @@ set(PROJECT_SOURCES
     src/IDetectionEngine.h
     src/DetectionEngine.h
     src/DetectionEngine.cpp
+    src/DLDetectionEngine.h
+    src/DLDetectionEngine.cpp
     src/DetectionController.h
     src/DetectionController.cpp
     src/ResultEvaluator.h
@@ -31,13 +38,17 @@ set(PROJECT_SOURCES
 
 qt_add_executable(surface_defect_detector ${PROJECT_SOURCES})
 
-target_include_directories(surface_defect_detector PRIVATE src)
+target_include_directories(surface_defect_detector PRIVATE
+    src
+    "${ONNXRUNTIME_DIR}/include"
+)
 
 target_link_libraries(surface_defect_detector PRIVATE
     Qt6::Widgets
     opencv_core
     opencv_imgproc
     opencv_imgcodecs
+    "${ONNXRUNTIME_DIR}/lib/onnxruntime.dll"
 )
 
 if(WIN32)
@@ -49,6 +60,13 @@ if(WIN32)
             "${CMAKE_SOURCE_DIR}/third_party/opencv/x64/mingw/bin/libopencv_core455.dll"
             "${CMAKE_SOURCE_DIR}/third_party/opencv/x64/mingw/bin/libopencv_imgproc455.dll"
             "${CMAKE_SOURCE_DIR}/third_party/opencv/x64/mingw/bin/libopencv_imgcodecs455.dll"
+            $<TARGET_FILE_DIR:surface_defect_detector>
+    )
+    # ONNX Runtime dll（providers_shared 是 onnxruntime.dll 的运行期依赖）
+    add_custom_command(TARGET surface_defect_detector POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${ONNXRUNTIME_DIR}/lib/onnxruntime.dll"
+            "${ONNXRUNTIME_DIR}/lib/onnxruntime_providers_shared.dll"
             $<TARGET_FILE_DIR:surface_defect_detector>
     )
 endif()

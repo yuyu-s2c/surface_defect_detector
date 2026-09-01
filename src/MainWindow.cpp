@@ -5,6 +5,7 @@
 #include <QTreeWidget>
 #include <QTableWidget>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QPushButton>
 #include <QLabel>
 #include <QSplitter>
@@ -58,6 +59,16 @@ void MainWindow::buildUi()
     overlayLayout->addStretch();
     rightLayout->addLayout(overlayLayout);
 
+    // 引擎选择：传统 CV 基线 / 深度学习（EfficientAD，需先用训练脚本导出 ONNX）
+    QHBoxLayout* engineLayout = new QHBoxLayout;
+    engineLayout->addWidget(new QLabel(QStringLiteral("检测引擎：")));
+    m_engineCombo = new QComboBox;
+    m_engineCombo->addItem(QStringLiteral("传统 CV（v0.1 基线）"));
+    m_engineCombo->addItem(QStringLiteral("深度学习（EfficientAD）"));
+    engineLayout->addWidget(m_engineCombo);
+    engineLayout->addStretch();
+    rightLayout->addLayout(engineLayout);
+
     rightLayout->addWidget(new QLabel(QStringLiteral("缺陷框：")));
     m_boxTable = new QTableWidget(0, 5);
     m_boxTable->setHorizontalHeaderLabels(
@@ -96,6 +107,11 @@ void MainWindow::buildUi()
     connect(m_batchButton, &QPushButton::clicked, this, &MainWindow::onRunBatch);
     connect(m_gtOverlayCheck, &QCheckBox::toggled, this, &MainWindow::onOverlayToggled);
     connect(m_detOverlayCheck, &QCheckBox::toggled, this, &MainWindow::onOverlayToggled);
+    // 切换引擎：通知 Controller 清空引擎缓存，并重检当前图
+    connect(m_engineCombo, &QComboBox::currentIndexChanged, this, [this](int idx) {
+        m_ctrl.setEngineKind(idx == 1 ? EngineKind::DL : EngineKind::Traditional);
+        runDetectionForCurrent();
+    });
 }
 
 bool MainWindow::loadDataset(const QString& rootPath)

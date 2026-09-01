@@ -1,0 +1,15 @@
+# 训练侧锁定版本（Python 3.12，Windows）。torch/torchvision 的 +cu126 构建在 PyPI 没有，
+# 必须先装 CUDA 版：
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+# 再装其余：pip install -r tools/training/requirements.txt
+anomalib==2.6.0
+lightning==2.6.5
+lightning-utilities==0.15.3
+numpy==2.5.2
+opencv-python-headless==5.0.0.93
+torch==2.13.0+cu126
+torchmetrics==1.9.0
+torchvision==0.28.0+cu126
+onnx==1.22.0
+onnxscript==0.7.1
+onnxruntime==1.29.0

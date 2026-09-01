@@ -12,6 +12,7 @@ class QTreeWidget;
 class QTreeWidgetItem;
 class QTableWidget;
 class QCheckBox;
+class QComboBox;
 class QPushButton;
 class QLabel;
 class QSplitter;
@@ -57,6 +58,7 @@ private:
     QCheckBox* m_gtOverlayCheck = nullptr;
     QCheckBox* m_detOverlayCheck = nullptr;
     QTableWidget* m_boxTable = nullptr;
+    QComboBox* m_engineCombo = nullptr;
     QPushButton* m_batchButton = nullptr;
     QTableWidget* m_metricsTable = nullptr;
     QLabel* m_statusLabel = nullptr;
