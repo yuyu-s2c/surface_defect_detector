@@ -1,0 +1,10 @@
+third_party/
+build*/
+models/
+
+# Qt Creator 用户配置
+.qtcreator/
+
+# MVTec AD 数据集（约 700MB，CC BY-NC-SA 许可，不入库，本地保留）
+metal_nut/
+screw/
