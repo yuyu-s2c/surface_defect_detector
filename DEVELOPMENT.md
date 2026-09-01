@@ -45,26 +45,31 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
 surface_defect_detector/
 ├── CMakeLists.txt
 ├── src/
-│   ├── main.cpp              # 入口；--batch 批处理模式（自动化验证用）
-│   ├── MainWindow.h/.cpp     # 主窗口：左数据集树 / 中查看器 / 右结果面板
-│   ├── DatasetManager.h/.cpp # 数据集加载：类别→缺陷类型→图片，配对 GT 掩码
-│   ├── ImageViewWidget.h/.cpp# QGraphicsView 看图：缩放平移，GT/检测结果叠加
-│   ├── DetectionEngine.h/.cpp# 传统 CV 检测引擎（v0.1 基线）
-│   └── ResultEvaluator.h/.cpp# 像素级 P/R/F1/IoU + 图像级检出评估
+│   ├── main.cpp                # 入口；--batch 批处理模式（自动化验证用）
+│   ├── MainWindow.h/.cpp       # 主窗口（纯视图层）：左数据集树 / 中查看器 / 右结果面板
+│   ├── DetectionController.h/.cpp # 应用服务层：数据集 + 引擎缓存 + 批量编排（GUI/CLI 共用）
+│   ├── IDetectionEngine.h      # 检测引擎抽象接口 + DetectionResult 输出契约
+│   ├── DetectionEngine.h/.cpp  # 传统 CV 检测引擎（v0.1 基线，IDetectionEngine 实现）
+│   ├── DatasetManager.h/.cpp   # 数据集加载：类别→缺陷类型→图片，配对 GT 掩码
+│   ├── ImageViewWidget.h/.cpp  # QGraphicsView 看图：缩放平移，GT/检测结果叠加
+│   └── ResultEvaluator.h/.cpp  # 像素级 P/R/F1/IoU + 图像级检出评估
 ├── third_party/opencv/       # OpenCV 预编译包（gitignore）
 ├── metal_nut/  screw/        # MVTec AD 数据集（嵌套重复目录忽略不用）
 └── build/                    # 构建产物（gitignore）
 ```
 
+分层方向：`MainWindow → DetectionController → IDetectionEngine ← 具体引擎实现`，
+`DatasetManager` / `ResultEvaluator` 为无 UI 依赖的领域服务，由 Controller 使用。
+
 ### 关键接口契约（迭代时保持兼容）
 
-`DetectionResult`（src/DetectionEngine.h:10）是所有检测实现的统一输出：
+`IDetectionEngine` + `DetectionResult`（src/IDetectionEngine.h）是所有检测实现的统一约定：
 
 - `cv::Mat defectMask`：8UC1，0/255 缺陷掩码
 - `std::vector<cv::Rect> boxes` / `std::vector<double> areas`：缺陷框与面积
 - `bool detected(int minTotalArea)`：图像级检出判定（缺陷总面积 ≥ 阈值）
 
-后续深度学习引擎只要产出同一结构，UI、评估器、批处理模式均无需改动。
+后续深度学习引擎只要实现该接口产出同一结构，UI、编排、评估器、批处理模式均无需改动。
 
 ## 4. 阶段规划与状态
 
@@ -132,5 +137,6 @@ ONNX Runtime 的 MinGW 链接是主要不确定点，先用最小 demo（加载�
 
 - 提交规范：参考 README 参与贡献节（Feat_xxx 分支 + PR）
 - 不入库的内容：`third_party/`、`build*/`、`models/`、数据集目录不动
-- 检测引擎接口（DetectionResult 契约）变更需同步改 MainWindow、ResultEvaluator、batch 模式三处
+- 检测引擎接口（IDetectionEngine / DetectionResult 契约）变更需同步改
+  DetectionController、ResultEvaluator、batch 模式三处
 - 每阶段完成：更新本文档状态表与实测指标；跑通两个类别的 `--batch` 无崩溃

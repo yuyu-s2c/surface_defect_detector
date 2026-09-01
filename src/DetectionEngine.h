@@ -1,23 +1,8 @@
 #pragma once
 
-#include <opencv2/core.hpp>
+#include "IDetectionEngine.h"
 
-#include <QString>
-#include <QStringList>
-#include <vector>
-
-// 单张图的检测结果
-struct DetectionResult
-{
-    cv::Mat defectMask;                 // 8UC1，0/255 缺陷掩码
-    std::vector<cv::Rect> boxes;        // 缺陷外接框
-    std::vector<double> areas;          // 各缺陷像素面积
-    double totalArea = 0.0;             // 缺陷总像素数（连通域过滤后）
-    // 图像级检出判定：缺陷总面积达到阈值才算检出（零散噪声不报警）
-    bool detected(int minTotalArea = 1000) const { return totalArea >= minTotalArea; }
-};
-
-// 传统 OpenCV 检测引擎。接口保持稳定，便于以后替换为深度学习实现。
+// 传统 OpenCV 检测引擎（v0.1 基线），IDetectionEngine 接口的传统 CV 实现。
 //
 // 管线：灰度 -> 与良品统计模型求差 -> z-score 归一 -> 空间聚合 -> 阈值
 //       -> 形态学 -> 连通域按面积过滤。
@@ -32,17 +17,17 @@ struct DetectionResult
 //
 // 已知局限：screw 类存在旋转差异，本管线无配准，效果差；后续可在差分前
 // 加 ORB 特征 + 单应性配准。metal_nut 的 scratch 类对比度低，召回有限。
-class DetectionEngine
+class DetectionEngine : public IDetectionEngine
 {
 public:
     // 用该产品类的良品训练图构建参考模型（均值图 + 逐像素标准差图）。
     // goodImagePaths 为空则构建失败。
-    bool buildReference(const QStringList& goodImagePaths);
+    bool buildReference(const QStringList& goodImagePaths) override;
 
-    bool hasReference() const { return !m_referenceMean.empty(); }
+    bool hasReference() const override { return !m_referenceMean.empty(); }
 
     // 对一张原图（BGR 或灰度，尺寸不符会 resize 到模板尺寸）执行检测
-    DetectionResult detect(const cv::Mat& image) const;
+    DetectionResult detect(const cv::Mat& image) const override;
 
     // 可调参数
     int gaussianKernel = 5;             // 输入高斯预滤波核（奇数）

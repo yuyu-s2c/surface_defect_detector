@@ -1,6 +1,5 @@
 #include "MainWindow.h"
-#include "DatasetManager.h"
-#include "DetectionEngine.h"
+#include "DetectionController.h"
 #include "ResultEvaluator.h"
 
 #include <QApplication>
@@ -9,8 +8,6 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QTextStream>
-
-#include <opencv2/imgcodecs.hpp>
 
 // 在可执行文件的上级/上上级目录中寻找数据集根（含 metal_nut、screw 等类别目录）
 static QString locateDatasetRoot()
@@ -49,11 +46,12 @@ static int runBatch(const QString& categoryArg)
         return 2;
     }
 
-    DatasetManager dataset;
-    if (dataset.scan(datasetRoot) == 0) {
+    DetectionController ctrl;
+    if (!ctrl.loadDataset(datasetRoot)) {
         out << "ERROR: 数据集根目录扫描失败：" << datasetRoot << "\n";
         return 2;
     }
+    const DatasetManager& dataset = ctrl.dataset();
     if (!dataset.categories().contains(category)) {
         out << "ERROR: 数据集根 " << datasetRoot << " 中没有类别 " << category
             << "（已有：" << dataset.categories().join(QStringLiteral(", ")) << "）\n";
@@ -63,46 +61,36 @@ static int runBatch(const QString& categoryArg)
     out << "数据集根: " << dataset.rootPath() << "\n";
     out << "类别: " << category << "\n";
 
-    DetectionEngine engine;
-    if (!engine.buildReference(dataset.trainGoodImages(category))) {
+    if (!ctrl.prepareEngine(category)) {
         out << "ERROR: 无法构建参考模板（" << category << "/train/good 为空或不可读）\n";
         return 2;
     }
     out << "参考模板已构建（train/good 共 "
         << dataset.trainGoodImages(category).size() << " 张）\n\n";
 
-    QMap<QString, PixelMetrics> pixelByDefect;
-    QMap<QString, ImageMetrics> imageByDefect;
+    // 逐图日志由批量信号驱动，与编排逻辑解耦（GUI 侧用同一信号做界面响应）
+    QObject::connect(&ctrl, &DetectionController::imageProcessed, &ctrl,
+                     [&out](const QString& defect, const QString& imgPath,
+                            const DetectionResult& r, const PixelMetrics& pm) {
+        const bool isDefect = (defect != QStringLiteral("good"));
+        out << QStringLiteral("%1/%2: boxes=%3 area=%4 F1=%5 %6\n")
+                   .arg(defect, QFileInfo(imgPath).fileName())
+                   .arg(r.boxes.size())
+                   .arg(r.totalArea, 0, 'f', 0)
+                   .arg(pm.f1(), 0, 'f', 3)
+                   .arg(r.detected() == isDefect ? QStringLiteral("OK")
+                                                 : QStringLiteral("MISJUDGE"));
+    });
+
+    BatchMetrics metrics;
+    ctrl.runBatch(category, metrics);
+    const QMap<QString, PixelMetrics>& pixelByDefect = metrics.pixel;
+    const QMap<QString, ImageMetrics>& imageByDefect = metrics.image;
     PixelMetrics pixelTotal;
     ImageMetrics imageTotal;
-
-    const QStringList defects = dataset.defectTypes(category);
-    for (const QString& defect : defects) {
-        const bool isDefect = (defect != QStringLiteral("good"));
-        const QStringList images = dataset.testImages(category, defect);
-        for (const QString& imgPath : images) {
-            cv::Mat img = cv::imread(imgPath.toLocal8Bit().constData(), cv::IMREAD_COLOR);
-            if (img.empty()) {
-                out << "WARN: 无法读取 " << imgPath << "，跳过\n";
-                continue;
-            }
-            DetectionResult r = engine.detect(img);
-            const QString gtPath = dataset.groundTruthMask(category, defect, imgPath);
-            const PixelMetrics pm = ResultEvaluator::evaluatePixel(r.defectMask, gtPath);
-            const ImageMetrics im = ResultEvaluator::evaluateImage(r.detected(), isDefect);
-            pixelByDefect[defect] += pm;
-            imageByDefect[defect] += im;
-            pixelTotal += pm;
-            imageTotal += im;
-
-            out << QStringLiteral("%1/%2: boxes=%3 area=%4 F1=%5 %6\n")
-                       .arg(defect, QFileInfo(imgPath).fileName())
-                       .arg(r.boxes.size())
-                       .arg(r.totalArea, 0, 'f', 0)
-                       .arg(pm.f1(), 0, 'f', 3)
-                       .arg(r.detected() == isDefect ? QStringLiteral("OK")
-                                                     : QStringLiteral("MISJUDGE"));
-        }
+    for (auto it = pixelByDefect.constBegin(); it != pixelByDefect.constEnd(); ++it) {
+        pixelTotal += it.value();
+        imageTotal += imageByDefect[it.key()];
     }
 
     out << "\n===== 各缺陷类型指标（像素级） =====\n";

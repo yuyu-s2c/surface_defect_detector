@@ -2,8 +2,8 @@
 
 #include <QMainWindow>
 
-#include "DatasetManager.h"
-#include "DetectionEngine.h"
+#include "DetectionController.h"
+#include "IDetectionEngine.h"
 #include "ResultEvaluator.h"
 
 #include <opencv2/core.hpp>
@@ -17,14 +17,15 @@ class QLabel;
 class QSplitter;
 class ImageViewWidget;
 
-// 主窗口：左侧数据集树 / 中间图像查看器 / 右侧结果面板
+// 主窗口（纯视图层）：左侧数据集树 / 中间图像查看器 / 右侧结果面板。
+// 只做三件事：摆控件、把用户操作转发给 DetectionController、把结果渲染到界面；
+// 数据集、引擎生命周期、批量编排全部在 DetectionController。
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
 
 public:
     explicit MainWindow(QWidget* parent = nullptr);
-    ~MainWindow() override;
 
     // 加载数据集根目录；失败返回 false
     bool loadDataset(const QString& rootPath);
@@ -40,20 +41,14 @@ private:
     void showImage(const QString& category, const QString& defectType,
                    const QString& imagePath);
     void runDetectionForCurrent();
-    // 每类一个引擎实例，惰性构建并缓存（参考模型构建需读全部良品图，较耗时）
-    DetectionEngine* engineFor(const QString& category);
-    void updateMetricsTable(const QString& category,
-                            const QMap<QString, PixelMetrics>& pixel,
+    void updateMetricsTable(const QMap<QString, PixelMetrics>& pixel,
                             const QMap<QString, ImageMetrics>& image);
 
-    DatasetManager m_dataset;
-    QMap<QString, DetectionEngine*> m_engines; // 类别 -> 引擎（惰性构建）
+    DetectionController m_ctrl;
     QString m_currentCategory;
     QString m_currentDefectType;
     QString m_currentImagePath;
     cv::Mat m_currentBgr;
-    DetectionResult m_currentResult;
-    bool m_hasDetection = false;
 
     QSplitter* m_splitter = nullptr;
     QTreeWidget* m_tree = nullptr;

@@ -13,10 +13,7 @@
 #include <QHeaderView>
 #include <QFileInfo>
 #include <QMessageBox>
-#include <QFileDialog>
-#include <QApplication>
 #include <QCoreApplication>
-#include <QDir>
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -27,11 +24,6 @@ MainWindow::MainWindow(QWidget* parent)
     buildUi();
     resize(1400, 900);
     setWindowTitle(QStringLiteral("表面缺陷检测工具"));
-}
-
-MainWindow::~MainWindow()
-{
-    qDeleteAll(m_engines);
 }
 
 void MainWindow::buildUi()
@@ -108,25 +100,26 @@ void MainWindow::buildUi()
 
 bool MainWindow::loadDataset(const QString& rootPath)
 {
-    if (m_dataset.scan(rootPath) == 0)
+    if (!m_ctrl.loadDataset(rootPath))
         return false;
     populateTree();
-    m_statusLabel->setText(QStringLiteral("数据集：%1").arg(m_dataset.rootPath()));
+    m_statusLabel->setText(QStringLiteral("数据集：%1").arg(m_ctrl.dataset().rootPath()));
     return true;
 }
 
 void MainWindow::populateTree()
 {
     m_tree->clear();
-    const QStringList cats = m_dataset.categories();
+    const DatasetManager& dataset = m_ctrl.dataset();
+    const QStringList cats = dataset.categories();
     for (const QString& cat : cats) {
         QTreeWidgetItem* catItem = new QTreeWidgetItem(m_tree, {cat});
         catItem->setData(0, Qt::UserRole, QStringLiteral("category"));
-        const QStringList defects = m_dataset.defectTypes(cat);
+        const QStringList defects = dataset.defectTypes(cat);
         for (const QString& defect : defects) {
             QTreeWidgetItem* defectItem = new QTreeWidgetItem(catItem, {defect});
             defectItem->setData(0, Qt::UserRole, QStringLiteral("defect"));
-            const QStringList images = m_dataset.testImages(cat, defect);
+            const QStringList images = dataset.testImages(cat, defect);
             for (const QString& img : images) {
                 QTreeWidgetItem* imgItem =
                     new QTreeWidgetItem(defectItem, {QFileInfo(img).fileName()});
@@ -177,7 +170,7 @@ void MainWindow::showImage(const QString& category, const QString& defectType,
     m_view->setImage(m_currentBgr);
 
     // GT 掩码叠加
-    const QString gtPath = m_dataset.groundTruthMask(category, defectType, imagePath);
+    const QString gtPath = m_ctrl.dataset().groundTruthMask(category, defectType, imagePath);
     if (!gtPath.isEmpty()) {
         cv::Mat gt = cv::imread(gtPath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
         if (!gt.empty() && gt.size() != m_currentBgr.size())
@@ -188,7 +181,6 @@ void MainWindow::showImage(const QString& category, const QString& defectType,
     m_imageInfoLabel->setText(QStringLiteral("%1 / %2 / %3")
                                   .arg(category, defectType, QFileInfo(imagePath).fileName()));
 
-    m_hasDetection = false;
     m_boxTable->setRowCount(0);
     runDetectionForCurrent();
     onOverlayToggled();
@@ -199,24 +191,24 @@ void MainWindow::runDetectionForCurrent()
     if (m_currentBgr.empty() || m_currentCategory.isEmpty())
         return;
 
-    DetectionEngine* engine = engineFor(m_currentCategory);
-    if (!engine)
+    // 引擎构建失败（train/good 为空）时静默不检，与批量入口的弹窗区分：
+    // 单张浏览是被动触发，不适合弹窗打断
+    if (!m_ctrl.prepareEngine(m_currentCategory))
         return;
 
-    m_currentResult = engine->detect(m_currentBgr);
-    m_hasDetection = true;
-    m_view->setDetectionOverlay(m_currentResult.defectMask, m_currentResult.boxes);
+    const DetectionResult result = m_ctrl.detect(m_currentCategory, m_currentBgr);
+    m_view->setDetectionOverlay(result.defectMask, result.boxes);
 
-    m_boxTable->setRowCount(static_cast<int>(m_currentResult.boxes.size()));
-    for (size_t i = 0; i < m_currentResult.boxes.size(); ++i) {
-        const cv::Rect& r = m_currentResult.boxes[i];
+    m_boxTable->setRowCount(static_cast<int>(result.boxes.size()));
+    for (size_t i = 0; i < result.boxes.size(); ++i) {
+        const cv::Rect& r = result.boxes[i];
         const int row = static_cast<int>(i);
         m_boxTable->setItem(row, 0, new QTableWidgetItem(QString::number(r.x)));
         m_boxTable->setItem(row, 1, new QTableWidgetItem(QString::number(r.y)));
         m_boxTable->setItem(row, 2, new QTableWidgetItem(QString::number(r.width)));
         m_boxTable->setItem(row, 3, new QTableWidgetItem(QString::number(r.height)));
         m_boxTable->setItem(row, 4,
-            new QTableWidgetItem(QString::number(m_currentResult.areas[i])));
+            new QTableWidgetItem(QString::number(result.areas[i])));
     }
 }
 
@@ -226,60 +218,35 @@ void MainWindow::onOverlayToggled()
     m_view->setDetectionOverlayVisible(m_detOverlayCheck->isChecked());
 }
 
-DetectionEngine* MainWindow::engineFor(const QString& category)
-{
-    DetectionEngine* engine = m_engines.value(category, nullptr);
-    if (engine)
-        return engine;
-    engine = new DetectionEngine;
-    if (!engine->buildReference(m_dataset.trainGoodImages(category))) {
-        delete engine;
-        return nullptr;
-    }
-    m_engines.insert(category, engine);
-    return engine;
-}
-
 void MainWindow::onRunBatch()
 {
     if (m_currentCategory.isEmpty())
         return;
 
     const QString cat = m_currentCategory;
-    DetectionEngine* engine = engineFor(cat);
-    if (!engine) {
+    if (!m_ctrl.prepareEngine(cat)) {
         QMessageBox::warning(this, QStringLiteral("错误"),
                              QStringLiteral("无法构建 %1 的参考模型（train/good 为空）").arg(cat));
         return;
     }
 
-    QMap<QString, PixelMetrics> pixel;
-    QMap<QString, ImageMetrics> image;
-    const QStringList defects = m_dataset.defectTypes(cat);
-    for (const QString& defect : defects) {
-        const bool isDefect = (defect != QStringLiteral("good"));
-        const QStringList images = m_dataset.testImages(cat, defect);
-        for (const QString& imgPath : images) {
-            cv::Mat img = cv::imread(imgPath.toLocal8Bit().constData(), cv::IMREAD_COLOR);
-            if (img.empty())
-                continue;
-            DetectionResult r = engine->detect(img);
-            const QString gtPath = m_dataset.groundTruthMask(cat, defect, imgPath);
-            pixel[defect] += ResultEvaluator::evaluatePixel(r.defectMask, gtPath);
-            image[defect] += ResultEvaluator::evaluateImage(r.detected(), isDefect);
-        }
-        QCoreApplication::processEvents(); // 保持界面响应
-    }
+    // 批量期间每处理一张图让界面响应一次（同步批处理下维持旧行为）
+    const QMetaObject::Connection conn =
+        connect(&m_ctrl, &DetectionController::imageProcessed, this,
+                [](const QString&, const QString&, const DetectionResult&, const PixelMetrics&) {
+                    QCoreApplication::processEvents();
+                });
+    BatchMetrics metrics;
+    m_ctrl.runBatch(cat, metrics);
+    disconnect(conn);
 
-    updateMetricsTable(cat, pixel, image);
+    updateMetricsTable(metrics.pixel, metrics.image);
     m_statusLabel->setText(QStringLiteral("已完成 %1 批量检测").arg(cat));
 }
 
-void MainWindow::updateMetricsTable(const QString& category,
-                                    const QMap<QString, PixelMetrics>& pixel,
+void MainWindow::updateMetricsTable(const QMap<QString, PixelMetrics>& pixel,
                                     const QMap<QString, ImageMetrics>& image)
 {
-    Q_UNUSED(category);
     const QStringList defects = pixel.keys();
     m_metricsTable->setRowCount(defects.size());
     int row = 0;

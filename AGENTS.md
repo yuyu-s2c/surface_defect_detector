@@ -34,9 +34,11 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
 
 ## 硬性约定
 
-- **接口契约**：所有检测引擎输出 `DetectionResult`（src/DetectionEngine.h:10：
-  defectMask / boxes / areas / detected()）。改此结构需同步改 MainWindow、
-  ResultEvaluator、main.cpp 批处理三处。
+- **接口契约**：所有检测引擎实现 `IDetectionEngine` 并输出 `DetectionResult`
+  （src/IDetectionEngine.h：defectMask / boxes / areas / detected()）。改此结构需同步改
+  DetectionController、ResultEvaluator、main.cpp 批处理三处。
+- **分层**：MainWindow 纯视图（只做展示与转发）；DetectionController 是应用服务层
+  （数据集 + 引擎缓存 + 批量编排，GUI 与 --batch 共用）；新引擎实现 IDetectionEngine 即可接入。
 - **不要动数据集**：metal_nut/、screw/ 只读；嵌套重复目录（metal_nut/metal_nut 等）
   忽略不用，也不要删。
 - **不入库**：third_party/、build*/、models/（见 .gitignore）。

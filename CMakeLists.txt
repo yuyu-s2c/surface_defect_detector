@@ -20,8 +20,11 @@ set(PROJECT_SOURCES
     src/DatasetManager.cpp
     src/ImageViewWidget.h
     src/ImageViewWidget.cpp
+    src/IDetectionEngine.h
     src/DetectionEngine.h
     src/DetectionEngine.cpp
+    src/DetectionController.h
+    src/DetectionController.cpp
     src/ResultEvaluator.h
     src/ResultEvaluator.cpp
 )
