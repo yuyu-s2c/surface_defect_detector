@@ -109,18 +109,22 @@ screw 的 lightning 目录名是 `MvtecTopLevel` 而不是 `MVTecAD`，因为脚
 
 ### C++ `ResultEvaluator`（`--batch --engine dl`）
 
-和 v0.1 同一口径：热图 → 阈值 → 形态学 → 连通域 → 像素 P/R/F1/IoU + 图像级检出。
+像素级仍和 v0.1 同一套评估器：热图 → 阈值 → 形态学 → 连通域 → P/R/F1/IoU。
+图像级 Phase 3.6 起是分数过线（`max(热图) >= mean+kσ`），不再用连通域面积。
 
-C++ **不用** anomalib 存在 ckpt 里的阈值。ONNX 里也没有完整后处理。做法是：用全部 `train/good` 跑热图，取每张图最大值的 `mean + kσ` 当像素阈值，再加面积门。
+C++ **不用** anomalib 存在 ckpt 里的阈值。ONNX 里也没有完整后处理。做法是：用全部 `train/good` 跑热图，取每张 256 图最大值的 `mean + kσ` 当像素阈值，再加形态学。
 
-工作点（已收住，写在 `DetectionController.cpp`）：
+工作点（已收住，写在 `EngineParams.h`）：
 
-| | kσ | 图像级面积门 |
+| | kσ | 叠加面积门 |
 |---|---|---|
 | metal_nut | 3.0 | 1000 |
 | screw | 1.0 | 300 |
 
-连通域最小面积两边都是 100；闭运算核 21。图像级判定：过滤后 `totalArea >= minImageArea`。
+连通域最小面积两边都是 100；闭运算核 21。
+Phase 3.6 起图像级判定是分数过线（`max(热图) >= mean+kσ`），面积门只影响绿叠加和 `--batch` 对照列。
+试过良品 95% 分位当图像阈：screw train/good 有饱和到 1.0 的长尾，分位 0.84 把召回压到 0.67；
+metal_nut 分布极紧，同一 95% 误报 13.6%。所以图像阈与像素阈共用 mean+kσ。
 
 ---
 
@@ -173,13 +177,16 @@ metal_nut 没做同样扫描：k=3、面积 1000 就到了图像级 0.92、误�
 两层：
 
 1. **网络（排序）**：AUROC 已经在 0.97+，再训一轮、调 lr，不会质变。256 的 EfficientAD-S 对侧螺纹、正面小改动会糊，这是模型+分辨率上限。
-2. **C++ 硬判决**：和 anomalib 的 0.95 图像 F1 还有缝，来自 `mean+kσ`、形态学、面积门。k 和 1000→300 已经挖过；再拧参数别指望到 90%。
+2. **C++ 硬判决**：和 anomalib 的 0.95 图像 F1 还有缝。面积门已经解耦（工作项 2）：
+   图像级走 `max(热图) >= mean+kσ`，screw 从 0.75 提到 0.781，metal_nut 0.939。
+   剩下到不了 0.90 的是 `thread_side` / `manipulated_front` 的 max 落在良品分数带里；
+   anomalib 那 0.95 用的是带标签的 F1 自适应阈。再拧 k 会先打穿误报预算。
 
 产线若只做「剔除不良」，看图像级 / 缺陷检出；要叠掩码看像素 F1。screw 现在是前者能用、后者在细缺陷上不行。
 
 C++ 推理默认 DirectML（Phase 3.6 工作项 1），metal_nut 整批含标定约 13 s；`--provider cpu` 约 10 分钟。
 GUI 已把加载/标定/单张/批量放到工作线程，底部有进度条；无缓存时才对全部 train/good
-做阈值标定（不是训练），结果写到模型旁 `.calib.json`（v2 键含 cpu/dml，两套阈值不混用）。
+做阈值标定（不是训练），结果写到模型旁 `.calib.json`（v3 含每图 max 与 cpu/dml，两套阈值不混用）。
 模型、良品图指纹与 EP 未变则下次启动跳过。同进程内再切走内存缓存。
 更大模型 / 更高分辨率受本机 RTX 3050 Ti 4GB 限制，P3 不改网络。
 
@@ -191,8 +198,9 @@ GUI 已把加载/标定/单张/批量放到工作线程，底部有进度条；�
 tools/training/train_efficientad.py   训练 / 测试 / 导出
 tools/training/TRAIN.md               复制命令
 tools/training/requirements.txt       锁版本
-src/DLDetectionEngine.cpp             ONNX 推理 + 热图后处理
-src/DetectionController.cpp           每类 k 和面积门
+src/DLDetectionEngine.cpp             ONNX 推理 + 热图后处理 + 图像级分数
+src/EngineParams.h                    每类像素 k 和叠加面积门
+src/IDetectionEngine.h                DetectionResult：detected() = 分数过线
 src/ResultEvaluator.cpp               指标口径
 ```
 

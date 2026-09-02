@@ -36,7 +36,7 @@ public:
     double zAggThreshold = 1.4;         // 聚合分数阈值：高于它判为缺陷像素
     int morphCloseKernel = 21;          // 闭运算核（连接邻近缺陷像素成区）
     int minDefectArea = 100;            // 连通域最小面积（像素），小于则视为噪声
-    int imageLevelMinArea = 1000;       // 图像级检出判定的缺陷总面积下限
+    int imageLevelMinArea = 1000;       // 面积门；CV 的图像分就是 totalArea，阈值写这里
 
 private:
     static cv::Mat toGray(const cv::Mat& image);

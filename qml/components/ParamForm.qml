@@ -87,7 +87,7 @@ ColumnLayout {
             }
         }
         ParamRow {
-            label: "图像级门"
+            label: "叠加面积门"
             AppSpinBox {
                 Layout.fillWidth: true
                 from: 0; to: 1000000; stepSize: 50; value: app.dlImageLevelMinArea

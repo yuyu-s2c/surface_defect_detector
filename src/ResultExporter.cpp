@@ -32,7 +32,8 @@ QString csvNum(double v)
 }
 
 void writeSummaryRow(QTextStream& out, const QString& name,
-                     const PixelMetrics& p, const ImageMetrics& im)
+                     const PixelMetrics& p, const ImageMetrics& im,
+                     const ImageMetrics& ia)
 {
     out << name << ','
         << csvNum(p.precision()) << ','
@@ -41,7 +42,9 @@ void writeSummaryRow(QTextStream& out, const QString& name,
         << csvNum(p.iou()) << ','
         << csvNum(im.accuracy()) << ','
         << im.correct << ','
-        << im.total << '\n';
+        << im.total << ','
+        << csvNum(ia.accuracy()) << ','
+        << ia.correct << '\n';
 }
 
 } // namespace
@@ -108,8 +111,8 @@ bool ResultExporter::exportBatch(const QString& dir,
         return false;
     QTextStream per(&perFile);
     per.setEncoding(QStringConverter::Utf8);
-    per << QStringLiteral("category,engine,defect,file,detected,n_boxes,total_area,"
-                          "P,R,F1,IoU,image_ok\n");
+    per << QStringLiteral("category,engine,defect,file,detected,detected_area,n_boxes,total_area,"
+                          "image_score,image_threshold,P,R,F1,IoU,image_ok\n");
     for (const BatchImageRecord& rec : metrics.records) {
         const bool isDefect = (rec.defectType != QStringLiteral("good"));
         const bool imageOk = (rec.result.detected() == isDefect);
@@ -118,8 +121,11 @@ bool ResultExporter::exportBatch(const QString& dir,
             << rec.defectType << ','
             << QFileInfo(rec.imagePath).fileName() << ','
             << (rec.result.detected() ? 1 : 0) << ','
+            << (rec.result.detectedByArea() ? 1 : 0) << ','
             << rec.result.boxes.size() << ','
             << QString::number(rec.result.totalArea, 'f', 0) << ','
+            << csvNum(rec.result.imageScore) << ','
+            << csvNum(rec.result.imageThreshold) << ','
             << csvNum(rec.pixel.precision()) << ','
             << csvNum(rec.pixel.recall()) << ','
             << csvNum(rec.pixel.f1()) << ','
@@ -133,28 +139,35 @@ bool ResultExporter::exportBatch(const QString& dir,
         return false;
     QTextStream sum(&sumFile);
     sum.setEncoding(QStringConverter::Utf8);
-    sum << QStringLiteral("category,engine,defect,P,R,F1,IoU,img_acc,img_correct,img_total\n");
+    sum << QStringLiteral("category,engine,defect,P,R,F1,IoU,img_acc,img_correct,img_total,"
+                          "img_area_acc,img_area_correct\n");
     PixelMetrics pixelTotal;
     ImageMetrics imageTotal;
+    ImageMetrics imageAreaTotal;
     const QStringList keys = metrics.pixel.keys();
     for (const QString& defect : keys) {
         const PixelMetrics& p = metrics.pixel[defect];
         const ImageMetrics& im = metrics.image[defect];
+        const ImageMetrics& ia = metrics.imageByArea[defect];
         pixelTotal += p;
         imageTotal += im;
+        imageAreaTotal += ia;
         sum << category << ',' << engineName << ',';
-        writeSummaryRow(sum, defect, p, im);
+        writeSummaryRow(sum, defect, p, im, ia);
     }
     sum << category << ',' << engineName << ',';
-    writeSummaryRow(sum, QStringLiteral("TOTAL"), pixelTotal, imageTotal);
+    writeSummaryRow(sum, QStringLiteral("TOTAL"), pixelTotal, imageTotal, imageAreaTotal);
     const ImageMetrics& goodIm = metrics.image[QStringLiteral("good")];
     if (goodIm.total > 0) {
-        // P 列放误报率，R/F1/IoU/img_acc 空，img_correct 为误报张数
+        // P 列放误报率（分数口径），img_correct 为误报张数
+        const ImageMetrics& goodArea = metrics.imageByArea[QStringLiteral("good")];
         sum << category << ',' << engineName << ','
             << QStringLiteral("good_FPR") << ','
             << csvNum(1.0 - goodIm.accuracy()) << ",,,,,"
             << (goodIm.total - goodIm.correct) << ','
-            << goodIm.total << '\n';
+            << goodIm.total << ','
+            << csvNum(1.0 - goodArea.accuracy()) << ','
+            << (goodArea.total - goodArea.correct) << '\n';
     }
     return true;
 }

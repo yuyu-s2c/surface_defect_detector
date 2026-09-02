@@ -34,8 +34,9 @@ struct BatchImageRecord
 // 一个类别的批量评估结果（按缺陷类型累积 + 逐图记录）
 struct BatchMetrics
 {
-    QMap<QString, PixelMetrics> pixel;  // 缺陷类型 -> 像素级指标
-    QMap<QString, ImageMetrics> image;  // 缺陷类型 -> 图像级指标
+    QMap<QString, PixelMetrics> pixel;       // 缺陷类型 -> 像素级指标
+    QMap<QString, ImageMetrics> image;       // 分数口径（默认，detected()）
+    QMap<QString, ImageMetrics> imageByArea; // 面积门对照列
     QVector<BatchImageRecord> records;
 };
 

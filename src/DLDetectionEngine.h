@@ -3,6 +3,7 @@
 #include "IDetectionEngine.h"
 
 #include <memory>
+#include <vector>
 
 namespace Ort { struct Env; struct Session; }
 
@@ -21,8 +22,9 @@ enum class OrtEpKind { Auto, Cpu, Dml };
 // 存的阈值：anomalib 的阈值/归一化参数存在其 checkpoint 的 metadata 里，ONNX
 // 导出不含完整的后处理标定；用 train/good 良品图跑一遍模型，取每张良品热图
 // 最大值的 均值 + kσ 作为像素阈值，与接口契约（buildReference 收良品图）天然吻合，
-// 且随数据集自适应。mean/std 落到模型同目录的 <模型名>.calib.json，下次启动
-// 若 ONNX、train/good 指纹与 EP（cpu/dml）未变则跳过良品推理（改 k 仍不触发重标定）。
+// 且随数据集自适应。mean/std 与每图 max 落到模型同目录的 <模型名>.calib.json（v3），
+// 下次启动若 ONNX、train/good 指纹与 EP（cpu/dml）未变则跳过良品推理
+// （改 k 仍不触发重标定）。
 class DLDetectionEngine : public IDetectionEngine
 {
 public:
@@ -42,14 +44,18 @@ public:
 
     // 可调参数
     int inputSize = 256;             // ONNX 模型输入边长（导出时固定 256×256）
-    double thresholdSigma = 3.0;     // 阈值 = 良品热图逐图最大值的均值 + kσ（默认 3；screw 由 Controller 改为 1.0）
+    double thresholdSigma = 3.0;     // 像素阈值 = 良品热图逐图最大值的均值 + kσ（只切掩码）
     int morphCloseKernel = 21;       // 闭运算核（与传统引擎一致）
     int minDefectArea = 100;         // 连通域最小面积（像素）
-    int imageLevelMinArea = 1000;    // 图像级检出面积门（screw 由 Controller 改为 300）
+    int imageLevelMinArea = 1000;    // 叠加/框面积门（对照列；不再驱动 detected()）
 
 private:
-    // 推理得到异常热图并上采样到原图尺寸（CV_32F）；失败返回空 Mat
-    cv::Mat anomalyMap(const cv::Mat& image) const;
+    // 推理得到异常热图并上采样到原图尺寸（CV_32F）；失败返回空 Mat。
+    // nativeMax：256 热图最大值，作图像级分数（上采样前，与 EfficientAD 图像分一致）
+    cv::Mat anomalyMap(const cv::Mat& image, double* nativeMax = nullptr) const;
+
+    // 图像级阈值 = mean + kσ（与像素阈同一 k）。无标定则 +inf（空结果不算检出）
+    double currentImageThreshold() const;
 
     // useDml 失败抛 Ort::Exception，由 buildReference 决定是否回退 CPU
     void createSession(bool useDml);
@@ -59,7 +65,8 @@ private:
     std::unique_ptr<Ort::Session> m_session; // ORT 会话（Env 为进程级静态共享）
     QString m_activeProvider;     // 给人看
     QString m_calibProviderKey;   // 标定缓存键："dml" / "cpu"
-    // 良品热图最大值的均值/标准差。detect() 用 mean + kσ，改 k 不必重跑标定
+    // 良品热图最大值的均值/标准差。detect() 用 mean + kσ 切掩码，改 k 不必重跑标定
     double m_calibMean = 0.0;
     double m_calibStd = 0.0;
+    std::vector<double> m_imageScores; // 每张 train/good 的 256 热图 max，写入 calib v3 便于对照
 };

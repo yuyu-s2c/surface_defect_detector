@@ -6,7 +6,8 @@
 
 venv、imagenette、teacher 权重已就绪。步数 70000，不要让系统休眠，也不要同时占用 GPU。
 
-Phase 2 已收住：metal_nut `k=3`/面积 1000，screw `k=1`/面积 300。下面命令用于复现或重训。
+Phase 2 已收住像素工作点：metal_nut `k=3`/叠加面积 1000，screw `k=1`/叠加面积 300。
+Phase 3.6 起图像级判定是 `max(热图) >= mean+kσ`，面积门只影响绿叠加。下面命令用于复现或重训。
 
 ## 训 screw
 
@@ -45,7 +46,8 @@ cd /d/C++/QtProject/surface_defect_detector && PYTHONUNBUFFERED=1 tools/training
 .\build\surface_defect_detector.exe --batch screw --engine dl --provider cpu
 ```
 
-screw 的 DL：阈值 `均值+1.0σ`，图像级面积门 300（metal_nut 仍是 3σ / 1000）。改后必须重新编译再跑批处理。
+screw 的 DL：像素/图像阈都是 `均值+1.0σ`，叠加面积门 300（metal_nut 仍是 3σ / 1000）。
+`--batch` 图像级默认分数过线，另打面积门对照列。改 k 后必须重新编译再跑批处理（不必重训）。
 
 ## 只测已有 checkpoint（不训练）
 

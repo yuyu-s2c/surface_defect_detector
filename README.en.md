@@ -6,7 +6,7 @@ Status, architecture, build commands and measured metrics: [DEVELOPMENT.md](DEVE
 Agent conventions: [AGENTS.md](AGENTS.md). Training: [tools/training/TRAIN.md](tools/training/TRAIN.md).
 
 Phases 1–3.5 are done (CV baseline / EfficientAD / engineering / QML MVVM).
-Phase 3.6 work item 1 (DirectML GPU inference) is done. Next: image-level score and new-category onboarding.
+Phase 3.6 work items 1 (DirectML) and 2 (image-level score) are done. Next: new-category onboarding.
 Phase 4 (camera/PLC) waits on hardware.
 
 ```bash
@@ -17,7 +17,8 @@ Phase 4 (camera/PLC) waits on hardware.
 ```
 
 GUI overlay: red = ground-truth mask, green = detection. DL defaults to DirectML (CPU fallback).
-Switching to DL calibrates on `train/good` once per execution provider (DirectML is tens of seconds; that is not training) and writes `<model>.calib.json` next to the ONNX file.
+Switching to DL calibrates on `train/good` once per execution provider (DirectML is tens of seconds; that is not training) and writes `<model>.calib.json` (v3, keyed by EP) next to the ONNX file.
+`--batch` image-level defaults to score-over-threshold and still prints the area-gate column for comparison; it does not read GUI settings. `--provider cpu|dml|auto`.
 
 1.  xxxx
 2.  xxxx

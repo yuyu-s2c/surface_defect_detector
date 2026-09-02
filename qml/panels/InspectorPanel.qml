@@ -75,7 +75,13 @@ Rectangle {
                             spacing: 8
                             StatTile { Layout.fillWidth: true; label: "缺陷框"; value: app.hasImage ? String(app.defectCount) : "—" }
                             StatTile { Layout.fillWidth: true; label: "总面积"; value: app.hasImage ? Number(app.totalArea).toFixed(0) : "—" }
-                            StatTile { Layout.fillWidth: true; label: "图像级门"; value: app.hasImage ? String(app.minImageArea) : "—" }
+                            StatTile { Layout.fillWidth: true; label: "叠加面积门"; value: app.hasImage ? String(app.minImageArea) : "—" }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+                            StatTile { Layout.fillWidth: true; label: "图像分"; value: app.hasImage ? Number(app.imageScore).toFixed(4) : "—" }
+                            StatTile { Layout.fillWidth: true; label: "判定阈值"; value: app.hasImage ? Number(app.imageThreshold).toFixed(4) : "—" }
                         }
                         BoxTable { Layout.fillWidth: true; Layout.fillHeight: true }
                         AppButton {

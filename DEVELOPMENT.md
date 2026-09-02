@@ -58,7 +58,7 @@ surface_defect_detector/
 │   ├── DetectionController.h/.cpp # 应用服务层：数据集 + 引擎缓存 + 批量编排（GUI/CLI 共用）
 │   ├── IDetectionEngine.h      # 检测引擎抽象接口 + DetectionResult 输出契约
 │   ├── DetectionEngine.h/.cpp  # 传统 CV 检测引擎（v0.1 基线，IDetectionEngine 实现）
-│   ├── DLDetectionEngine.h/.cpp # EfficientAD ONNX 推理（Phase 2；3.6 DirectML / CPU 回退）
+│   ├── DLDetectionEngine.h/.cpp # EfficientAD ONNX（P2；3.6 DirectML + 图像级分数过线）
 │   ├── EngineParams.h          # 传统/DL 可调参数默认值（P2 工作点）
 │   ├── OverlayColors.h         # GT 红 / 检测绿（画布与导出共用）
 │   ├── ResultExporter.h/.cpp   # 标注图 + CSV 导出（Phase 3）
@@ -84,8 +84,10 @@ DetectionController 工作线程，进度在画布蒙层与底栏；`--batch` �
 
 - `cv::Mat defectMask`：8UC1，0/255 缺陷掩码
 - `std::vector<cv::Rect> boxes` / `std::vector<double> areas`：缺陷框与面积
-- `bool detected()`：图像级检出判定（P3.5 及以前：`totalArea >= minImageArea`，面积门由引擎写入。
-  Phase 3.6 改为图像级分数过线，面积门只影响掩码/框；改此字段须同步四处，见第 4 节 3.6）
+- `double imageScore` / `imageThreshold`：图像级分数与判定阈值
+- `bool detected()`：分数过线（`imageScore >= imageThreshold`）。P3.5 及以前是
+  `totalArea >= minImageArea`。面积门只影响掩码/框与 `--batch` 对照列。
+  改此结构须同步 DetectionController、ResultEvaluator、main.cpp 批处理、MainViewModel 四处。
 
 后续深度学习引擎只要实现该接口产出同一结构，ViewModel、编排、评估器、批处理模式均无需改动。
 
@@ -172,11 +174,11 @@ screw，160 张（v0.1 因无配准基本无效）：
 回归（收口时实测，与 P2 表相同）：metal_nut CV 图像级 58/115、F1 0.2926；DL 106/115、F1 0.2703；
 screw DL 120/160、F1 0.4782。
 
-- **参数**：右侧「检测参数」（CV：聚合阈值/闭运算核/面积门；DL：kσ/闭运算核/面积门），按引擎×类别持久化。恢复默认 = 该类别 P2 工作点。DL 的 k 在 detect 时现算（标定只存 mean/std），改 k 不重跑 train/good。
+- **参数**：右侧「检测参数」（CV：聚合阈值/闭运算核/面积门；DL：kσ/闭运算核/叠加面积门），按引擎×类别持久化。恢复默认 = 该类别 P2 工作点。DL 的 k 在 detect 时现算（标定只存 mean/std），改 k 不重跑 train/good。Phase 3.6 起 DL 面积门只影响绿叠加，图像级走分数过线。
 - **导出**：当前图 PNG；批量 `images/<defect>/*.png` + `per_image.csv` + `summary.csv`（需先跑过该引擎该类别批量）。
 - **对比**：同一类别 CV vs DL 的 P/R/F1/图像级 + ΔF1；缺哪侧批量补跑哪侧。两类引擎分缓存。
 - **叠加**：红 = GT 标注（`ground_truth/`），绿 = 当前引擎检出；`good` 无红。
-- **GUI 线程**：加载 / 标定 / 单张 / 批量在工作线程，底部状态栏进度条。切 DL 时若模型旁没有有效 `.calib.json`（v2 还键 EP），才对全部 `train/good` 跑 ONNX 标定阈值（metal_nut 220 张；DML 约十几秒，CPU 仍要数分钟，不是训练），结果写到 `models/<类>/weights/onnx/<类>.calib.json`；模型、良品图指纹与 EP 未变则下次启动跳过该循环。同进程再切走内存缓存。`--batch` 仍同步，共用该文件缓存。
+- **GUI 线程**：加载 / 标定 / 单张 / 批量在工作线程，底部状态栏进度条。切 DL 时若模型旁没有有效 `.calib.json`（v3 还键 EP 与每图 max），才对全部 `train/good` 跑 ONNX 标定阈值（metal_nut 220 张；DML 约十几秒，CPU 仍要数分钟，不是训练），结果写到 `models/<类>/weights/onnx/<类>.calib.json`；模型、良品图指纹与 EP 未变则下次启动跳过该循环。同进程再切走内存缓存。`--batch` 仍同步，共用该文件缓存；图像级默认分数过线，另打面积门对照列。
 
 ### Phase 3.5 ✅ QML + MVVM 界面重做
 
@@ -222,25 +224,52 @@ C++ 推理默认 DirectML（独显），失败回 CPU。`--provider auto|cpu|dml
 
 两边指标与 P2 表一致，未因 EP 浮点差跳档。DML 约 44×。
 
-#### 工作项 2：图像级 OK/NG 与面积门解耦
+#### 工作项 2：图像级 OK/NG 与面积门解耦 ✅
 
-产线剔除看「这张图有没有问题」，不是掩码贴得多齐。现状 `detected()` = 形态学后
-`totalArea >= 面积门`，和像素叠加绑在一起。screw 的缝在这里：anomalib 图像 F1 0.95，
-C++ 0.75；k 与面积门已扫过，再拧到不了 90%。
+产线剔除看「这张图有没有问题」，不是掩码贴得多齐。P3.5 及以前 `detected()` =
+形态学后 `totalArea >= 面积门`，和绿叠加绑在一起。
 
-契约：`DetectionResult` 增加图像级分数与判定阈值；`detected()` 改为分数过线。
-像素掩码 / 框仍走现有热图→阈值→形态学→连通域，只给绿叠加。改契约须同步
-DetectionController、ResultEvaluator、main.cpp 批处理、MainViewModel 四处。
+契约：`DetectionResult` 增加 `imageScore` / `imageThreshold`；`detected()` 改为分数过线。
+像素掩码 / 框仍走热图→kσ→形态学→连通域，只给绿叠加。`--batch` 默认打分数口径，
+并保留面积门对照列。P2/P3 表仍是面积门基线，不动。
 
-P2/P3 表仍是面积门口径的基线，不动。本项收口后单列「分数口径」图像级表，
-`--batch` 默认打新口径，并保留面积门列便于对照。
+分数：DL = 256 热图 max（上采样前）；CV = `totalArea`（故 `--batch metal_nut` 传统仍是
+58/115、F1 0.2926）。阈值：DL = 良品 max 的 `mean + kσ`（与像素阈同一 k，改 k 不必重标定）；
+CV = 面积门。标定缓存升到 **v3**（写入每图 max 便于对照；读到 v2 会重跑一轮 DML 标定）。
 
-| 验收 | 标准 |
-|---|---|
-| screw 图像级 | 从 0.75 往 **≥0.90** 靠（分数口径） |
-| good 误报 | 仍 **≤10%**（screw 现 2.4%，metal_nut 现 4.5%） |
-| metal_nut 图像级 | 不回落到 0.90 以下（现 0.92） |
-| 像素 F1 | **不作为本项成功标准**（`thread_side` 等细缺陷，256 EfficientAD-S 掩码贴不紧是模型上限） |
+试过 train/good 的 95% 分位当图像阈：screw 的良品 max 有饱和到 1.0 的长尾，分位被抬到 0.84，
+图像级掉到 0.675；metal_nut 分布极紧（std≈0.004），同一 95% 测试误报 13.6%。改回 mean+kσ。
+
+实测（2026-09-02，DML，P2 像素工作点：metal_nut k=3 / 面积 1000；screw k=1 / 面积 300）：
+
+metal_nut，115 张：
+
+| 类别 | 像素 P | R | F1 | 图像级（分数） | 图像级（面积对照） |
+|---|---|---|---|---|---|
+| bent | 0.87 | 0.57 | 0.69 | 1.00（25/25） | 1.00（25/25） |
+| color | 0.65 | 0.85 | 0.74 | 0.95（21/22） | 0.91（20/22） |
+| flip | 0.88 | 0.09 | 0.17 | 1.00（23/23） | 1.00（23/23） |
+| scratch | 0.94 | 0.30 | 0.45 | 0.83（19/23） | 0.74（17/23） |
+| good（误报率） | — | — | — | 0.091（2/22） | 0.045（1/22） |
+| **汇总** | 0.83 | 0.16 | 0.269 | **0.939**（108/115） | 0.922（106/115） |
+
+screw，160 张：
+
+| 类别 | 像素 P | R | F1 | 图像级（分数） | 图像级（面积对照） |
+|---|---|---|---|---|---|
+| scratch_head | 0.32 | 0.60 | 0.41 | 0.79（19/24） | 0.71（17/24） |
+| scratch_neck | 0.48 | 0.84 | 0.61 | 0.96（24/25） | 0.92（23/25） |
+| thread_side | 0.09 | 0.05 | 0.06 | 0.43（10/23） | 0.35（8/23） |
+| thread_top | 0.49 | 0.78 | 0.60 | 1.00（23/23） | 1.00（23/23） |
+| manipulated_front | 0.67 | 0.21 | 0.32 | 0.42（10/24） | 0.38（9/24） |
+| good（误报率） | — | — | — | 0.049（2/41） | 0.024（1/41） |
+| **汇总** | 0.43 | 0.54 | 0.478 | **0.781**（125/160） | 0.750（120/160） |
+
+验收：metal_nut 图像级 0.939（不掉到 0.90 下）、good 误报 9.1% / 4.9% 均 ≤10%；
+screw 从 0.75 提到 0.781。未到 0.90：剩下的漏检是 `thread_side` / `manipulated_front`
+的 max 落在良品分数带里（已知模型短板），再降 k 会先打穿误报预算。anomalib 图像 F1 0.95
+用的是带标签的 F1 自适应阈，和无监督 mean+kσ 不是同一口径。像素 F1 非本项标准
+（metal_nut 0.269，相对 P2 的 0.270 差在 256 max 与上采样 max 的第 4 位）。
 
 #### 工作项 3：新类别零改代码接入
 
@@ -280,6 +309,7 @@ IFrameSource
 - 提交规范：参考 README 参与贡献节（Feat_xxx 分支 + PR）
 - 不入库的内容：`third_party/`、`build*/`、`models/`、数据集目录不动
 - 检测引擎接口（IDetectionEngine / DetectionResult 契约）变更需同步改
-  DetectionController、ResultEvaluator、main.cpp 批处理、MainViewModel 四处
+  DetectionController、ResultEvaluator、main.cpp 批处理、MainViewModel 四处。
+  `detected()` 为分数过线；面积门只影响掩码/框与 `--batch` 对照列
 - 优先用 Qt / OpenCV / 已接入的成熟库，不要手搓官方已有的控件与交互（详见 AGENTS.md）
 - 每阶段完成：更新本文档状态表与实测指标；跑通两个类别的 `--batch` 无崩溃

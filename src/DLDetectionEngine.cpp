@@ -10,6 +10,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QtDebug>
@@ -18,6 +19,7 @@
 #include <dxgi.h>
 
 #include <cstring>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -30,7 +32,8 @@ Ort::Env& ortEnv()
 
 // 缓存格式版本：统计方式或键变了就升，强制重跑 train/good。
 // v2：加入 provider（cpu/dml），CPU 与 DML 热图数值不可混用同一阈值。
-constexpr int kCalibCacheVersion = 2;
+// v3：写入每张良品的图像分（256 热图 max），图像级分位阈不必再跑 ONNX。
+constexpr int kCalibCacheVersion = 3;
 
 struct DmlAdapter {
     int deviceId = 0;
@@ -108,7 +111,8 @@ QString fingerprintGoodImages(const QStringList& paths)
 
 bool tryLoadCalibCache(const QString& path, qint64 modelSize, qint64 modelMtimeMs,
                        int inputSize, int goodCount, const QString& goodFp,
-                       const QString& provider, double& mean, double& stddev)
+                       const QString& provider, double& mean, double& stddev,
+                       std::vector<double>& imageScores)
 {
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly))
@@ -136,14 +140,22 @@ bool tryLoadCalibCache(const QString& path, qint64 modelSize, qint64 modelMtimeM
         return false;
     if (!obj.contains(QStringLiteral("calibMean")) || !obj.contains(QStringLiteral("calibStd")))
         return false;
+    const QJsonArray arr = obj.value(QStringLiteral("imageScores")).toArray();
+    if (arr.isEmpty())
+        return false;
     mean = obj.value(QStringLiteral("calibMean")).toDouble();
     stddev = obj.value(QStringLiteral("calibStd")).toDouble();
+    imageScores.clear();
+    imageScores.reserve(arr.size());
+    for (const QJsonValue& v : arr)
+        imageScores.push_back(v.toDouble());
     return true;
 }
 
 void saveCalibCache(const QString& path, qint64 modelSize, qint64 modelMtimeMs,
                     int inputSize, int goodCount, const QString& goodFp,
-                    const QString& provider, double mean, double stddev)
+                    const QString& provider, double mean, double stddev,
+                    const std::vector<double>& imageScores)
 {
     QJsonObject obj;
     obj.insert(QStringLiteral("version"), kCalibCacheVersion);
@@ -155,6 +167,10 @@ void saveCalibCache(const QString& path, qint64 modelSize, qint64 modelMtimeMs,
     obj.insert(QStringLiteral("provider"), provider);
     obj.insert(QStringLiteral("calibMean"), mean);
     obj.insert(QStringLiteral("calibStd"), stddev);
+    QJsonArray arr;
+    for (double s : imageScores)
+        arr.append(s);
+    obj.insert(QStringLiteral("imageScores"), arr);
 
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
@@ -183,6 +199,7 @@ bool DLDetectionEngine::buildReference(const QStringList& goodImagePaths)
     m_session.reset();
     m_calibMean = 0.0;
     m_calibStd = 0.0;
+    m_imageScores.clear();
 
     if (!QFileInfo::exists(m_modelPath)) {
         qWarning() << "DL 模型不存在:" << m_modelPath
@@ -228,16 +245,17 @@ bool DLDetectionEngine::buildReference(const QStringList& goodImagePaths)
     const QString cachePath = calibCachePath(m_modelPath);
     if (tryLoadCalibCache(cachePath, modelSize, modelMtimeMs, inputSize,
                           goodImagePaths.size(), goodFp, m_calibProviderKey,
-                          m_calibMean, m_calibStd)) {
+                          m_calibMean, m_calibStd, m_imageScores)) {
         qInfo() << "DL 阈值从缓存加载:" << cachePath
                 << "mean=" << m_calibMean << "std=" << m_calibStd
                 << "k=" << thresholdSigma
-                << "-> threshold=" << (m_calibMean + thresholdSigma * m_calibStd);
+                << "-> pixelThr=" << (m_calibMean + thresholdSigma * m_calibStd)
+                << "imageThr=" << currentImageThreshold();
         return true;
     }
 
-    // 阈值标定：跑全部良品图，统计每张热图最大值的均值与标准差。
-    // 良品热图最大值反映"正常波动的上限"，缺陷图的异常区域应显著高于它。
+    // 阈值标定：跑全部良品图，统计每张 256 热图最大值。
+    // mean/std → 像素 kσ 与图像级阈值；分数向量写入缓存便于对照。
     cv::Mat maxes;
     const int total = goodImagePaths.size();
     int i = 0;
@@ -245,35 +263,38 @@ bool DLDetectionEngine::buildReference(const QStringList& goodImagePaths)
         ++i;
         if (!reportProgress(i, total)) {
             m_session.reset();
+            m_imageScores.clear();
             return false;
         }
         cv::Mat img = cv::imread(p.toLocal8Bit().constData(), cv::IMREAD_COLOR);
         if (img.empty())
             continue;
-        cv::Mat heat = anomalyMap(img);
+        double nativeMax = 0.0;
+        cv::Mat heat = anomalyMap(img, &nativeMax);
         if (heat.empty())
             continue;
-        double m = 0.0;
-        cv::minMaxLoc(heat, nullptr, &m);
-        maxes.push_back(m);
+        maxes.push_back(nativeMax);
+        m_imageScores.push_back(nativeMax);
     }
     if (maxes.rows < 3) {
         qWarning() << "DL 阈值标定：有效良品图不足（" << maxes.rows << "张）";
         m_session.reset();
+        m_imageScores.clear();
         return false;
     }
     cv::Scalar mean, stddev;
     cv::meanStdDev(maxes, mean, stddev);
     m_calibMean = mean[0];
     m_calibStd = stddev[0];
-    // 日志用当前 k 算出阈值；detect() 再按当时的 thresholdSigma 现算，改 k 无需重标定
+    // 日志用当前 k / 分位算出阈值；detect() 再按当时参数现算，改 k 或分位无需重标定
     qInfo() << "DL 阈值标定:" << m_modelPath
             << "良品热图最大值 mean=" << m_calibMean << "std=" << m_calibStd
             << "k=" << thresholdSigma
-            << "-> threshold=" << (m_calibMean + thresholdSigma * m_calibStd);
+            << "-> pixelThr=" << (m_calibMean + thresholdSigma * m_calibStd)
+            << "imageThr=" << currentImageThreshold();
     saveCalibCache(cachePath, modelSize, modelMtimeMs, inputSize,
                    goodImagePaths.size(), goodFp, m_calibProviderKey,
-                   m_calibMean, m_calibStd);
+                   m_calibMean, m_calibStd, m_imageScores);
     return true;
 }
 
@@ -312,7 +333,17 @@ void DLDetectionEngine::createSession(bool useDml)
     qInfo() << "ONNX 会话:" << m_activeProvider << m_modelPath;
 }
 
-cv::Mat DLDetectionEngine::anomalyMap(const cv::Mat& image) const
+double DLDetectionEngine::currentImageThreshold() const
+{
+    if (!hasReference())
+        return std::numeric_limits<double>::infinity();
+    // 与像素阈同一 k：max(热图) 过线即 NG，不再过面积门。
+    // 不用良品分位：screw train/good 有饱和到 1.0 的长尾，95% 分位把召回压到 0.67；
+    // metal_nut 分布极紧，同一 95% 分位测试误报 13.6%。mean+kσ 沿用 P2 工作点。
+    return m_calibMean + thresholdSigma * m_calibStd;
+}
+
+cv::Mat DLDetectionEngine::anomalyMap(const cv::Mat& image, double* nativeMax) const
 {
     if (!m_session || image.empty())
         return {};
@@ -369,6 +400,11 @@ cv::Mat DLDetectionEngine::anomalyMap(const cv::Mat& image) const
             const float* data = out.GetTensorData<float>();
             cv::Mat heat(h, w, CV_32F);
             std::memcpy(heat.data, data, sizeof(float) * h * w);
+            if (nativeMax) {
+                double mx = 0.0;
+                cv::minMaxLoc(heat, nullptr, &mx);
+                *nativeMax = mx;
+            }
             // 上采样回原图尺寸，保证掩码与 GT 同尺寸（评估口径与 v0.1 一致）
             cv::resize(heat, heat, image.size(), 0, 0, cv::INTER_LINEAR);
             return heat;
@@ -387,11 +423,15 @@ DetectionResult DLDetectionEngine::detect(const cv::Mat& image) const
     if (!hasReference() || image.empty())
         return result;
 
-    cv::Mat heat = anomalyMap(image);
+    double nativeMax = 0.0;
+    cv::Mat heat = anomalyMap(image, &nativeMax);
     if (heat.empty())
         return result;
 
-    // 阈值 + 形态学 + 连通域过滤（与传统引擎同口径）
+    result.imageScore = nativeMax;
+    result.imageThreshold = currentImageThreshold();
+
+    // 阈值 + 形态学 + 连通域过滤（只给绿叠加 / 框；图像级走分数过线）
     // k 在 detect 时现算，GUI 改 thresholdSigma 不必重跑 train/good 标定
     const double threshold = m_calibMean + thresholdSigma * m_calibStd;
     cv::Mat bin;

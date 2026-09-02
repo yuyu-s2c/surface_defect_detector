@@ -119,6 +119,9 @@ DetectionResult DetectionEngine::detect(const cv::Mat& image) const
     }
 
     result.minImageArea = imageLevelMinArea;
+    // CV 没有网络分数：面积当图像分，detected() 与 P1 面积门口径相同
+    result.imageScore = result.totalArea;
+    result.imageThreshold = imageLevelMinArea;
     result.defectMask = bin;
     return result;
 }

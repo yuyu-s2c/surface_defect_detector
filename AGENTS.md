@@ -8,8 +8,8 @@
 + EfficientAD ONNX（Phase 2，已收住）+ Phase 3 工程化（参数/导出/双引擎对比/GUI 异步）
 + Phase 3.5 QML/MVVM 界面重做。
 数据集为 MVTec AD（metal_nut、screw，无监督设定：train/ 只有良品）。
-训练说明见 tools/training/TRAINING_NOTES.md。Phase 3.6 工作项 1（DirectML）已完成；
-接下来是图像级分数 / 新类别接入。Phase 4（相机/PLC）等实机。
+训练说明见 tools/training/TRAINING_NOTES.md。Phase 3.6 工作项 1（DirectML）与
+工作项 2（图像级分数过线）已完成；接下来是新类别接入。Phase 4（相机/PLC）等实机。
 
 ## 构建与运行
 
@@ -42,8 +42,9 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
 ## 硬性约定
 
 - **接口契约**：所有检测引擎实现 `IDetectionEngine` 并输出 `DetectionResult`
-  （src/IDetectionEngine.h：defectMask / boxes / areas / detected()）。改此结构需同步改
-  DetectionController、ResultEvaluator、main.cpp 批处理、MainViewModel 四处。
+  （src/IDetectionEngine.h：defectMask / boxes / areas / imageScore / imageThreshold /
+  detected() 为分数过线）。改此结构需同步改 DetectionController、ResultEvaluator、
+  main.cpp 批处理、MainViewModel 四处。
 - **优先用现成的，不要手搓**：Qt / OpenCV / 已接入的成熟库能覆盖的，直接用官方 API
   或第三方成熟实现，不要自己重写一套。自定义只做主题、布局和本项目没有现成控件的
   领域能力（例如 InspectionCanvas 的 GT/检测叠加）。不要重做官方控件已经提供的
@@ -66,5 +67,6 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
 
 - 构建零错误；改动的代码无新警告
 - 两个类别的 `--batch` 模式跑完不崩溃
-- 指标口径固定用 ResultEvaluator（像素级 P/R/F1/IoU + 图像级检出率），
-  新引擎与 v0.1 基线（DEVELOPMENT.md 第 4 节表格）同口径对比
+- 指标口径固定用 ResultEvaluator（像素级 P/R/F1/IoU + 图像级检出率）。
+  图像级默认分数过线，`--batch` 另打面积门对照列。像素级与 v0.1 基线
+  （DEVELOPMENT.md 第 4 节表格）同口径对比

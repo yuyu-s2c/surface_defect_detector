@@ -5,8 +5,8 @@
 阶段状态、架构、构建命令和实测指标见 [DEVELOPMENT.md](DEVELOPMENT.md)。
 给 AI 代理的约定见 [AGENTS.md](AGENTS.md)。训练见 [tools/training/TRAIN.md](tools/training/TRAIN.md)。
 
-当前进度：Phase 1～3.5 已完成；Phase 3.6 工作项 1（DirectML GPU 推理）已完成。
-接下来是图像级分数 / 新类别接入。Phase 4 产线对接等实机。
+当前进度：Phase 1～3.5 已完成；Phase 3.6 工作项 1（DirectML）与工作项 2（图像级分数）
+已完成。接下来是新类别接入。Phase 4 产线对接等实机。
 
 ```bash
 # GUI
@@ -20,7 +20,8 @@
 
 GUI 为暗色质检台（QML）：红=GT 标注，绿=检测结果。DL 默认 DirectML（失败回 CPU）。
 切深度学习时若尚无该 EP 的标定缓存，会跑一遍 `train/good`（DML 约十几秒，不是训练）；
-之后启动复用模型旁的 `.calib.json`。`--batch` 仍是无窗口 CLI，口径不变。`--provider cpu|dml|auto`。
+之后启动复用模型旁的 `.calib.json`（v3，键含 EP）。`--batch` 图像级默认分数过线，
+另打面积门对照列；不读 GUI 设置。`--provider cpu|dml|auto`。
 
 #### 参与贡献
 

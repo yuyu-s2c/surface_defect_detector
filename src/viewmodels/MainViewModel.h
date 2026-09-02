@@ -44,6 +44,8 @@ class MainViewModel : public QObject
     Q_PROPERTY(int defectCount READ defectCount NOTIFY detectionChanged)
     Q_PROPERTY(double totalArea READ totalArea NOTIFY detectionChanged)
     Q_PROPERTY(int minImageArea READ minImageArea NOTIFY detectionChanged)
+    Q_PROPERTY(double imageScore READ imageScore NOTIFY detectionChanged)
+    Q_PROPERTY(double imageThreshold READ imageThreshold NOTIFY detectionChanged)
     Q_PROPERTY(QImage sourceImage READ sourceImage NOTIFY imageChanged)
     Q_PROPERTY(QImage gtOverlayImage READ gtOverlayImage NOTIFY imageChanged)
     Q_PROPERTY(QImage detOverlayImage READ detOverlayImage NOTIFY detectionChanged)
@@ -100,6 +102,8 @@ public:
     int defectCount() const { return m_defectCount; }
     double totalArea() const { return m_totalArea; }
     int minImageArea() const { return m_minImageArea; }
+    double imageScore() const { return m_imageScore; }
+    double imageThreshold() const { return m_imageThreshold; }
     QImage sourceImage() const { return m_sourceImage; }
     QImage gtOverlayImage() const { return m_gtOverlayImage; }
     QImage detOverlayImage() const { return m_detOverlayImage; }
@@ -226,6 +230,8 @@ private:
     int m_defectCount = 0;
     int m_minImageArea = 0;
     double m_totalArea = 0.0;
+    double m_imageScore = 0.0;
+    double m_imageThreshold = 0.0;
 
     QString m_datasetRoot;
     QString m_currentCategory;

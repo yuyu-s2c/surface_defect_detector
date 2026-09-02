@@ -6,22 +6,28 @@
 #include <QStringList>
 
 #include <functional>
+#include <limits>
 #include <vector>
 
 // 单张图的检测结果：所有检测引擎（传统 CV / 深度学习）的统一输出契约。
-// 改此结构需同步改 DetectionController、ResultEvaluator、main.cpp 批处理三处。
+// 改此结构需同步改 DetectionController、ResultEvaluator、main.cpp 批处理、MainViewModel 四处。
 struct DetectionResult
 {
     cv::Mat defectMask;                 // 8UC1，0/255 缺陷掩码
     std::vector<cv::Rect> boxes;        // 缺陷外接框
     std::vector<double> areas;          // 各缺陷像素面积
     double totalArea = 0.0;             // 缺陷总像素数（连通域过滤后）
-    int minImageArea = 1000;            // 图像级检出面积门；引擎 detect() 写入
-    // 图像级检出判定：缺陷总面积达到阈值才算检出（零散噪声不报警）
-    bool detected() const { return totalArea >= minImageArea; }
+    int minImageArea = 1000;            // 面积门：只影响掩码/框与对照列，不再驱动判定
+    double imageScore = 0.0;            // 图像级分数（DL：热图 max；CV：totalArea）
+    // 判定阈值。默认 +inf，空结果 detected()=false；引擎 detect() 必须写入
+    double imageThreshold = std::numeric_limits<double>::infinity();
+    // 图像级检出：分数过线（Phase 3.6）。空结果阈值未写，不算检出。
+    bool detected() const { return imageScore >= imageThreshold; }
+    // 旧面积门口径，--batch / CSV 对照列用
+    bool detectedByArea() const { return totalArea >= minImageArea; }
 };
 
-// 检测引擎抽象接口。Phase 2 的深度学习引擎（EfficientAD）实现同一接口即可接入，
+// 检测引擎抽象接口。后续引擎实现同一接口即可接入，
 // ViewModel、编排（DetectionController）、评估（ResultEvaluator）均无需改动。
 class IDetectionEngine
 {

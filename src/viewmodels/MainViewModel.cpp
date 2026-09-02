@@ -189,6 +189,8 @@ void MainViewModel::clearDetection()
     m_defectCount = 0;
     m_totalArea = 0.0;
     m_minImageArea = 0;
+    m_imageScore = 0.0;
+    m_imageThreshold = 0.0;
     emit detectionChanged();
 }
 
@@ -225,6 +227,8 @@ void MainViewModel::applyDetectionResult(const DetectionResult& result)
     m_defectCount = int(result.boxes.size());
     m_totalArea = result.totalArea;
     m_minImageArea = result.minImageArea;
+    m_imageScore = result.imageScore;
+    m_imageThreshold = qIsFinite(result.imageThreshold) ? result.imageThreshold : 0.0;
     emit detectionChanged();
     emit workEnabledChanged();
 }

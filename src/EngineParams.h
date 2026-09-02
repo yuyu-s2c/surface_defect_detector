@@ -11,19 +11,19 @@ struct TraditionalParams
     double zAggThreshold = 1.4;   // 聚合分数阈值
     int morphCloseKernel = 21;    // 闭运算核
     int minDefectArea = 100;      // 连通域最小面积（像素）
-    int imageLevelMinArea = 1000; // 图像级检出面积门
+    int imageLevelMinArea = 1000; // 面积门；CV 的图像分就是 totalArea
 
     static TraditionalParams defaults() { return {}; }
 };
 
 struct DLParams
 {
-    double thresholdSigma = 3.0;  // 阈值 = 良品热图最大值均值 + kσ
+    double thresholdSigma = 3.0;  // 像素阈值 = 良品热图最大值均值 + kσ（只切掩码）
     int morphCloseKernel = 21;
     int minDefectArea = 100;
-    int imageLevelMinArea = 1000;
+    int imageLevelMinArea = 1000; // 叠加/框面积门，对照列用；不再驱动图像级判定
 
-    // screw：P2 实测 k=1.0、面积门 300；其余类别用 metal_nut 工作点
+    // screw：P2 实测像素 k=1.0、面积门 300（掩码工作点）；图像级阈值共用该 k
     static DLParams defaultsFor(const QString& category)
     {
         DLParams p;

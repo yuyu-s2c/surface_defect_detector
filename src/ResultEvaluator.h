@@ -21,7 +21,8 @@ struct PixelMetrics
 };
 
 // 图像级指标累积器：total 张图中 correct 张判定正确
-// （缺陷类有检出 = 正确；good 类无检出 = 正确）
+// （缺陷类有检出 = 正确；good 类无检出 = 正确）。
+// 检出与否由引擎 DetectionResult::detected() 决定（Phase 3.6 起默认分数过线）。
 struct ImageMetrics
 {
     long long total = 0;
@@ -38,7 +39,7 @@ public:
     // 检测掩码（8UC1，0/255，空 Mat 视为全零）vs GT 掩码文件（空路径视为全零，即 good 类）
     static PixelMetrics evaluatePixel(const cv::Mat& defectMask, const QString& gtMaskPath);
 
-    // 图像级判定：是否检出 vs 是否缺陷类
+    // 图像级判定：是否检出 vs 是否缺陷类（detected 来自 DetectionResult::detected()）
     static ImageMetrics evaluateImage(bool detected, bool isDefectClass)
     {
         ImageMetrics m;

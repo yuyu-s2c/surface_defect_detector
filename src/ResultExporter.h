@@ -22,7 +22,8 @@ public:
     static bool saveImage(const QString& path, const cv::Mat& bgr);
 
     // 写出 images/<defect>/<filename>.png + per_image.csv + summary.csv。
-    // 目录不存在则创建。失败返回 false。
+    // per_image 含 image_score / image_threshold / detected（分数）与 detected_area；
+    // summary 含 img_acc 与 img_area_* 对照列。目录不存在则创建。失败返回 false。
     static bool exportBatch(const QString& dir,
                             const QString& category,
                             const QString& engineName,

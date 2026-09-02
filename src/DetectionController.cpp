@@ -280,6 +280,7 @@ bool DetectionController::runBatch(const QString& category, BatchMetrics& out)
             const PixelMetrics pm = ResultEvaluator::evaluatePixel(r.defectMask, gtPath);
             out.pixel[defect] += pm;
             out.image[defect] += ResultEvaluator::evaluateImage(r.detected(), isDefect);
+            out.imageByArea[defect] += ResultEvaluator::evaluateImage(r.detectedByArea(), isDefect);
 
             BatchImageRecord rec;
             rec.defectType = defect;

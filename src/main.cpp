@@ -105,10 +105,12 @@ static int runBatch(const QString& categoryArg, EngineKind engineKind, OrtEpKind
                      [&out](const QString& defect, const QString& imgPath,
                             const DetectionResult& r, const PixelMetrics& pm) {
         const bool isDefect = (defect != QStringLiteral("good"));
-        out << QStringLiteral("%1/%2: boxes=%3 area=%4 F1=%5 %6\n")
+        out << QStringLiteral("%1/%2: boxes=%3 area=%4 score=%5 thr=%6 F1=%7 %8\n")
                    .arg(defect, QFileInfo(imgPath).fileName())
                    .arg(r.boxes.size())
                    .arg(r.totalArea, 0, 'f', 0)
+                   .arg(r.imageScore, 0, 'f', 4)
+                   .arg(r.imageThreshold, 0, 'f', 4)
                    .arg(pm.f1(), 0, 'f', 3)
                    .arg(r.detected() == isDefect ? QStringLiteral("OK")
                                                  : QStringLiteral("MISJUDGE"));
@@ -118,26 +120,31 @@ static int runBatch(const QString& categoryArg, EngineKind engineKind, OrtEpKind
     ctrl.runBatch(category, metrics);
     const QMap<QString, PixelMetrics>& pixelByDefect = metrics.pixel;
     const QMap<QString, ImageMetrics>& imageByDefect = metrics.image;
+    const QMap<QString, ImageMetrics>& imageAreaByDefect = metrics.imageByArea;
     PixelMetrics pixelTotal;
     ImageMetrics imageTotal;
+    ImageMetrics imageAreaTotal;
     for (auto it = pixelByDefect.constBegin(); it != pixelByDefect.constEnd(); ++it) {
         pixelTotal += it.value();
         imageTotal += imageByDefect[it.key()];
+        imageAreaTotal += imageAreaByDefect[it.key()];
     }
 
-    out << "\n===== 各缺陷类型指标（像素级） =====\n";
-    out << QStringLiteral("%1  %2  %3  %4  %5  %6\n")
+    out << "\n===== 各缺陷类型指标（像素级；img_acc=分数过线，img_area=面积门对照） =====\n";
+    out << QStringLiteral("%1  %2  %3  %4  %5  %6  %7\n")
                .arg(QStringLiteral("defect"), -15)
                .arg(QStringLiteral("P"), 8)
                .arg(QStringLiteral("R"), 8)
                .arg(QStringLiteral("F1"), 8)
                .arg(QStringLiteral("IoU"), 8)
-               .arg(QStringLiteral("img_acc"), 8);
+               .arg(QStringLiteral("img_acc"), 8)
+               .arg(QStringLiteral("img_area"), 8);
     const QStringList keys = pixelByDefect.keys();
     for (const QString& defect : keys) {
         const PixelMetrics& p = pixelByDefect[defect];
         const ImageMetrics& im = imageByDefect[defect];
-        out << QStringLiteral("%1  %2  %3  %4  %5  %6 (%7/%8)\n")
+        const ImageMetrics& ia = imageAreaByDefect[defect];
+        out << QStringLiteral("%1  %2  %3  %4  %5  %6 (%7/%8)  ")
                    .arg(defect, -15)
                    .arg(p.precision(), 8, 'f', 4)
                    .arg(p.recall(), 8, 'f', 4)
@@ -145,7 +152,11 @@ static int runBatch(const QString& categoryArg, EngineKind engineKind, OrtEpKind
                    .arg(p.iou(), 8, 'f', 4)
                    .arg(im.accuracy(), 8, 'f', 4)
                    .arg(im.correct)
-                   .arg(im.total);
+                   .arg(im.total)
+            << QStringLiteral("%1 (%2/%3)\n")
+                   .arg(ia.accuracy(), 8, 'f', 4)
+                   .arg(ia.correct)
+                   .arg(ia.total);
     }
 
     out << "\n===== 汇总（含 good） =====\n";
@@ -154,16 +165,27 @@ static int runBatch(const QString& categoryArg, EngineKind engineKind, OrtEpKind
                .arg(pixelTotal.recall(), 0, 'f', 4)
                .arg(pixelTotal.f1(), 0, 'f', 4)
                .arg(pixelTotal.iou(), 0, 'f', 4);
-    out << QStringLiteral("image-level accuracy: %1 (%2/%3)\n")
+    out << QStringLiteral("image-level (score): %1 (%2/%3)\n")
                .arg(imageTotal.accuracy(), 0, 'f', 4)
                .arg(imageTotal.correct)
                .arg(imageTotal.total);
+    out << QStringLiteral("image-level (area, 对照): %1 (%2/%3)\n")
+               .arg(imageAreaTotal.accuracy(), 0, 'f', 4)
+               .arg(imageAreaTotal.correct)
+               .arg(imageAreaTotal.total);
     const ImageMetrics& goodIm = imageByDefect[QStringLiteral("good")];
     if (goodIm.total > 0) {
-        out << QStringLiteral("good 误报率: %1 (%2/%3 张 good 图误报)\n")
+        out << QStringLiteral("good 误报率 (score): %1 (%2/%3 张 good 图误报)\n")
                    .arg(1.0 - goodIm.accuracy(), 0, 'f', 4)
                    .arg(goodIm.total - goodIm.correct)
                    .arg(goodIm.total);
+    }
+    const ImageMetrics& goodArea = imageAreaByDefect[QStringLiteral("good")];
+    if (goodArea.total > 0) {
+        out << QStringLiteral("good 误报率 (area, 对照): %1 (%2/%3)\n")
+                   .arg(1.0 - goodArea.accuracy(), 0, 'f', 4)
+                   .arg(goodArea.total - goodArea.correct)
+                   .arg(goodArea.total);
     }
     out << QStringLiteral("elapsed: %1 s\n").arg(timer.elapsed() / 1000.0, 0, 'f', 1);
     out.flush();
