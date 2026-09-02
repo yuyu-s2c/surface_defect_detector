@@ -23,14 +23,19 @@ struct DLParams
     int minDefectArea = 100;
     int imageLevelMinArea = 1000; // 叠加/框面积门，对照列用；不再驱动图像级判定
 
-    // screw：P2 实测像素 k=1.0、面积门 300（掩码工作点）；图像级阈值共用该 k
+    // 类别无关默认（新类接入走这里：k=3 / 面积门 1000 + 图像级分数标定）
+    static DLParams defaults() { return {}; }
+
+    // CLI `--batch` 不读 QSettings，P2 已收住的两类工作点必须留在代码里。
+    // 新类别禁止再加 if (category == ...)，一律 defaults()。
     static DLParams defaultsFor(const QString& category)
     {
-        DLParams p;
         if (category == QStringLiteral("screw")) {
+            DLParams p;
             p.thresholdSigma = 1.0;
             p.imageLevelMinArea = 300;
+            return p;
         }
-        return p;
+        return defaults();
     }
 };

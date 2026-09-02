@@ -29,6 +29,28 @@ void applyDLParams(DLDetectionEngine* engine, const DLParams& p)
     engine->imageLevelMinArea = p.imageLevelMinArea;
 }
 
+// anomalib Engine.export 落点，其次扁平回退。新类接入只放文件，不改这里的拼接规则。
+QString onnxExportedPath(const QString& root, const QString& category)
+{
+    return QStringLiteral("%1/models/%2/weights/onnx/%2.onnx").arg(root, category);
+}
+
+QString onnxFallbackPath(const QString& root, const QString& category)
+{
+    return QStringLiteral("%1/models/%2/%2.onnx").arg(root, category);
+}
+
+QString resolveOnnxModelPath(const QString& root, const QString& category)
+{
+    const QString exported = onnxExportedPath(root, category);
+    if (QFileInfo::exists(exported))
+        return exported;
+    const QString fallback = onnxFallbackPath(root, category);
+    if (QFileInfo::exists(fallback))
+        return fallback;
+    return {};
+}
+
 } // namespace
 
 DetectionController::DetectionController(QObject* parent)
@@ -145,6 +167,23 @@ QString DetectionController::dlProviderLabel(const QString& category) const
     return engine ? engine->activeProvider() : QString();
 }
 
+QString DetectionController::dlModelPath(const QString& category) const
+{
+    QMutexLocker lock(&m_mutex);
+    auto* engine = dynamic_cast<DLDetectionEngine*>(m_dlEngines.value(category, nullptr));
+    if (engine)
+        return engine->modelPath();
+    const QString root = m_dataset.rootPath();
+    lock.unlock();
+    return resolveOnnxModelPath(root, category);
+}
+
+QStringList DetectionController::onnxModelCandidates(const QString& category) const
+{
+    const QString root = m_dataset.rootPath();
+    return {onnxExportedPath(root, category), onnxFallbackPath(root, category)};
+}
+
 void DetectionController::setTraditionalParams(const QString& category,
                                                const TraditionalParams& p)
 {
@@ -200,12 +239,13 @@ IDetectionEngine* DetectionController::engineFor(const QString& category)
 
     IDetectionEngine* newEngine = nullptr;
     if (kind == EngineKind::DL) {
-        // anomalib Engine.export 实际落点：models/<类别>/weights/onnx/<类别>.onnx
-        const QString exported = QStringLiteral("%1/models/%2/weights/onnx/%2.onnx")
-                                     .arg(root, category);
-        const QString fallback = QStringLiteral("%1/models/%2/%2.onnx")
-                                     .arg(root, category);
-        const QString modelPath = QFileInfo::exists(exported) ? exported : fallback;
+        const QString modelPath = resolveOnnxModelPath(root, category);
+        if (modelPath.isEmpty()) {
+            qWarning() << "DL 模型不存在，试过:"
+                       << onnxExportedPath(root, category)
+                       << "和" << onnxFallbackPath(root, category);
+            return nullptr;
+        }
         auto* dl = new DLDetectionEngine(modelPath, epKind);
         applyDLParams(dl, dlP);
         newEngine = dl;

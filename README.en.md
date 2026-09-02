@@ -6,8 +6,8 @@ Status, architecture, build commands and measured metrics: [DEVELOPMENT.md](DEVE
 Agent conventions: [AGENTS.md](AGENTS.md). Training: [tools/training/TRAIN.md](tools/training/TRAIN.md).
 
 Phases 1–3.5 are done (CV baseline / EfficientAD / engineering / QML MVVM).
-Phase 3.6 work items 1 (DirectML) and 2 (image-level score) are done. Next: new-category onboarding.
-Phase 4 (camera/PLC) waits on hardware.
+Phase 3.6 work items 1–3 (DirectML, image-level score, zero-code new-category onboarding)
+are done. Next: work item 4 (folder frame source). Phase 4 (camera/PLC) waits on hardware.
 
 ```bash
 ./build/surface_defect_detector.exe
@@ -19,6 +19,10 @@ Phase 4 (camera/PLC) waits on hardware.
 GUI overlay: red = ground-truth mask, green = detection. DL defaults to DirectML (CPU fallback).
 Switching to DL calibrates on `train/good` once per execution provider (DirectML is tens of seconds; that is not training) and writes `<model>.calib.json` (v3, keyed by EP) next to the ONNX file.
 `--batch` image-level defaults to score-over-threshold and still prints the area-gate column for comparison; it does not read GUI settings. `--provider cpu|dml|auto`.
+
+New category, no code change: drop `<cat>/train/good` and `<cat>/test/...` at the dataset root;
+for DL also place `models/<cat>/weights/onnx/<cat>.onnx` (calibration needs at least 3 good images).
+Unknown categories use k=3 / area gate 1000. Details: [DEVELOPMENT.md](DEVELOPMENT.md) work item 3.
 
 1.  xxxx
 2.  xxxx

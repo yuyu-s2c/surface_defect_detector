@@ -13,7 +13,8 @@
 - `test/` 里既有良品也有缺陷；`ground_truth/` 是像素级掩码，**训练时不用**，只用来打分。
 - 每个产品类别 **单独一个模型**：`metal_nut` 和 `screw` 不共享权重，也不能接着对方的 ckpt 再训。
 
-数据集是 MVTec AD，图 700×700 PNG。我们只用了两个类：
+数据集是 MVTec AD，图 700×700 PNG。训练侧只用了两个类（脚本 `choices` 写死这两名，
+不为刷表再训 hazelnut / bottle）。C++ 推理不白名单类别：按同样布局丢目录即可接入。
 
 | | train/good | test（含 good） | 缺陷类型 |
 |---|---|---|---|
@@ -140,7 +141,9 @@ RuntimeError: Inference tensors do not track version counter.
 
 处理：从磁盘 ckpt **重新 load** 再导出（`--export-only`）。以后脚本也是 test 完走这条路径。`TracerWarning`、`triton not found`、constant folding 都可以忽略。
 
-C++ 找模型路径：`models/<类别>/weights/onnx/<类别>.onnx`。
+C++ 找模型路径：先 `models/<类别>/weights/onnx/<类别>.onnx`，再回退
+`models/<类别>/<类别>.onnx`。新类接入只放文件，不改 C++ / QML；标定缓存在模型旁
+`.calib.json`，不要把别类的 onnx 指过来。训练脚本仍只认 metal_nut / screw。
 
 ---
 
@@ -199,7 +202,7 @@ tools/training/train_efficientad.py   训练 / 测试 / 导出
 tools/training/TRAIN.md               复制命令
 tools/training/requirements.txt       锁版本
 src/DLDetectionEngine.cpp             ONNX 推理 + 热图后处理 + 图像级分数
-src/EngineParams.h                    每类像素 k 和叠加面积门
+src/EngineParams.h                    默认 k=3 / 面积 1000；仅 screw 为 P2 的 1 / 300
 src/IDetectionEngine.h                DetectionResult：detected() = 分数过线
 src/ResultEvaluator.cpp               指标口径
 ```

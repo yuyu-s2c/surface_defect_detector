@@ -10,6 +10,7 @@
 #include <QMap>
 #include <QMutex>
 #include <QString>
+#include <QStringList>
 #include <QThreadPool>
 #include <QVector>
 
@@ -69,6 +70,10 @@ public:
     OrtEpKind ortEpKind() const;
     // 该类 DL 引擎实际用上的 EP 文案；尚未构建则空串
     QString dlProviderLabel(const QString& category) const;
+    // 已加载会话用的 ONNX 路径；尚未构建则按约定解析（文件不存在仍返回空）
+    QString dlModelPath(const QString& category) const;
+    // anomalib 导出点，其次 models/<类>/<类>.onnx（接入文档约定，不因缺文件而省略）
+    QStringList onnxModelCandidates(const QString& category) const;
 
     // 按类别覆盖可调参数；已缓存的该引擎实例当场改字段（DL 改 k 不重建会话）。
     // CLI 不调用，保持代码内 P2 工作点。

@@ -661,8 +661,14 @@ void MainViewModel::onDetectFinished(bool ok, const DetectionResult& result)
 {
     if (!ok) {
         clearDetection();
-        setStatusText(QStringLiteral("无法加载 %1 的检测引擎（ONNX 缺失或良品图不可读）")
-                          .arg(m_currentCategory));
+        if (currentKind() == EngineKind::DL) {
+            const QString expected = m_ctrl.onnxModelCandidates(m_currentCategory).value(0);
+            setStatusText(QStringLiteral("无法加载 %1 的 DL 引擎（ONNX 缺失或 train/good 不足 3 张；约定 %2）")
+                              .arg(m_currentCategory, expected));
+        } else {
+            setStatusText(QStringLiteral("无法加载 %1 的传统引擎（train/good 为空或不可读）")
+                              .arg(m_currentCategory));
+        }
         return;
     }
     applyDetectionResult(result);
@@ -671,8 +677,14 @@ void MainViewModel::onDetectFinished(bool ok, const DetectionResult& result)
 void MainViewModel::onBatchFinished(bool ok, const QString& category)
 {
     if (!ok) {
-        raiseError(QStringLiteral("无法完成 %1 批量检测（train/good 为空或 ONNX 缺失）")
-                       .arg(category));
+        if (currentKind() == EngineKind::DL) {
+            const QString expected = m_ctrl.onnxModelCandidates(category).value(0);
+            raiseError(QStringLiteral("无法完成 %1 DL 批量（ONNX 缺失或 train/good 不足 3 张；约定 %2）")
+                           .arg(category, expected));
+        } else {
+            raiseError(QStringLiteral("无法完成 %1 批量检测（train/good 为空或不可读）")
+                           .arg(category));
+        }
         return;
     }
     refreshBatchDependent();

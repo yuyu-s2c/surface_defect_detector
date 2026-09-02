@@ -12,7 +12,7 @@
 class DatasetManager
 {
 public:
-    // 扫描数据集根目录（包含 metal_nut/、screw/ 等类别目录的目录）。
+    // 扫描数据集根目录（含任意 MVTec 布局类别目录，无白名单）。
     // 只认顶层类别目录（含 test/ 的才算一类）；解压套层目录没有顶层 test/，自然排除。
     // 返回发现的类别数。
     int scan(const QString& datasetRoot);

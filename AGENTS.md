@@ -8,8 +8,9 @@
 + EfficientAD ONNX（Phase 2，已收住）+ Phase 3 工程化（参数/导出/双引擎对比/GUI 异步）
 + Phase 3.5 QML/MVVM 界面重做。
 数据集为 MVTec AD（metal_nut、screw，无监督设定：train/ 只有良品）。
-训练说明见 tools/training/TRAINING_NOTES.md。Phase 3.6 工作项 1（DirectML）与
-工作项 2（图像级分数过线）已完成；接下来是新类别接入。Phase 4（相机/PLC）等实机。
+训练说明见 tools/training/TRAINING_NOTES.md。Phase 3.6 工作项 1～3（DirectML /
+图像级分数过线 / 新类别零改代码接入）已完成；接下来是工作项 4 模拟取流。
+Phase 4（相机/PLC）等实机。
 
 ## 构建与运行
 
@@ -59,7 +60,11 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
   左栏数据集树用官方 `TreeViewDelegate`，点叶子节点经 `selectFromModelIndex` 加载。
 - **不要动数据集**：metal_nut/、screw/ 只读（顶层 train/、test/、ground_truth/）。
   曾因解压套一层出现 metal_nut/metal_nut、screw/screw，已删除；若再出现则忽略。
-- **不入库**：third_party/、build*/、models/（见 .gitignore）。
+- **新类别**：按 MVTec 布局放入根下即可被树扫到；ONNX 放
+  `models/<类>/weights/onnx/<类>.onnx`。禁止再加 `if (category == "xxx")`；
+  无专表工作点走 `DLParams::defaults()`（k=3 / 面积门 1000）。训练脚本仍只认
+  metal_nut / screw，本阶段不为刷表再训新类。
+- **不入库**：third_party/、build*/、models/、_onboard/（见 .gitignore）。
 - **不执行 git 提交/推送等变更操作**，除非用户明确要求。
 - 代码注释用中文，风格对齐现有文件（解释"为什么"，关键实测依据写入注释）。
 

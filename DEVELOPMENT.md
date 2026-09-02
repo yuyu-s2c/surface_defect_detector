@@ -59,7 +59,7 @@ surface_defect_detector/
 │   ├── IDetectionEngine.h      # 检测引擎抽象接口 + DetectionResult 输出契约
 │   ├── DetectionEngine.h/.cpp  # 传统 CV 检测引擎（v0.1 基线，IDetectionEngine 实现）
 │   ├── DLDetectionEngine.h/.cpp # EfficientAD ONNX（P2；3.6 DirectML + 图像级分数过线）
-│   ├── EngineParams.h          # 传统/DL 可调参数默认值（P2 工作点）
+│   ├── EngineParams.h          # 传统/DL 可调参数；新类走 defaults()，仅 screw 保留 P2 工作点
 │   ├── OverlayColors.h         # GT 红 / 检测绿（画布与导出共用）
 │   ├── ResultExporter.h/.cpp   # 标注图 + CSV 导出（Phase 3）
 │   ├── DatasetManager.h/.cpp   # 数据集加载：类别→缺陷类型→图片，配对 GT 掩码
@@ -204,7 +204,7 @@ P4 相机/PLC 暂不做：没有实机，接 SDK 只能写成空壳。也不再�
 - 传统 CV 给 screw 做配准（DL 已覆盖旋转，别回到 P1 短板）
 - 为刷表再训 hazelnut / bottle 等类（新类别只用来验证「零改代码接入」，见工作项 3）
 
-实施顺序：1 → 2 → 3；模拟取流放在 1、2 之后，没有 GPU 和图像级分数它只是幻灯片。
+实施顺序：1 → 2 → 3 → 4；模拟取流放在 GPU 和图像级分数之后，没有它们它只是幻灯片。
 
 #### 工作项 1：GPU 推理 ✅
 
@@ -271,19 +271,36 @@ screw 从 0.75 提到 0.781。未到 0.90：剩下的漏检是 `thread_side` / `
 用的是带标签的 F1 自适应阈，和无监督 mean+kσ 不是同一口径。像素 F1 非本项标准
 （metal_nut 0.269，相对 P2 的 0.270 差在 256 max 与上采样 max 的第 4 位）。
 
-#### 工作项 3：新类别零改代码接入
+#### 工作项 3：新类别零改代码接入 ✅
 
-`DatasetManager` 已按 MVTec 布局扫目录，没有写死两类。写死的是 `EngineParams` 里
-screw 的 k/面积门，以及模型路径约定 `models/<类>/weights/onnx/<类>.onnx`。
+`DatasetManager` 按 MVTec 布局扫根下直接子目录，没有类别白名单。树、QSettings、
+`--batch <名|目录>` 都按名字走。`DLParams::defaultsFor` 只保留 screw 的 P2 工作点
+（k=1 / 面积门 300，CLI 不读 QSettings）；**新类禁止再加 `if`**，走 `defaults()`
+（k=3 / 面积门 1000）+ 图像级分数标定。
 
-加一类应为：放入 `train/good` + `test/` 目录 → 指出 ONNX（或先只用传统引擎）→
-标定 → 出指标。不改 C++ 默认值、不改 QML。新类没有专表工作点时，用类别无关的
-默认参数 + 图像级分数标定，而不是继续堆 `if (category == "screw")`。
+接入（不改 C++、不改 QML）：
 
-验收：第三类（可以是临时拷贝的 MVTec 布局目录，不必入库、不必刷 AUROC）能被树扫到、
-能切 DL、能 `--batch` 跑完不崩溃。metal_nut / screw 路径与指标不受影响。
+```
+<root>/<新类>/train/good/*.png          # DL 标定至少 3 张
+<root>/<新类>/test/<缺陷类型>/*.png
+<root>/<新类>/ground_truth/..._mask.png # 可选
+<root>/models/<新类>/weights/onnx/<新类>.onnx
+# 回退：<root>/models/<新类>/<新类>.onnx
+```
 
-#### 工作项 4：模拟取流（1、2 之后，可选收口）
+无 ONNX 时传统引擎可跑；切 DL / `--engine dl` 失败并打出约定路径，不崩溃。
+不提供 `--model`：标定缓存写在模型旁，指到别类 onnx 会污染那份 `.calib.json`。
+
+探针（临时 `_onboard/`，不入库、不刷 AUROC；验证后已删）：从 metal_nut 拷 3 张
+train/good + 各 1 张 test/good、test/scratch 及 mask，onnx 硬链到约定路径。
+
+实测（2026-09-02）：`--batch _onboard` 2 张退出 0；`--batch _onboard --engine dl`
+接到 `models/_onboard/weights/onnx/_onboard.onnx`，DML 标定 3 张 + 推理 2 张，0.8 s，
+退出 0（指标无意义）。回归未漂：metal_nut CV 图像级 58/115、F1 0.2926；metal_nut DL
+分数口径 108/115、F1 0.269；screw DL 125/160、F1 0.478（阈值仍是 k=1 的 0.714，
+没有掉到通用 k=3）。
+
+#### 工作项 4：模拟取流（1～3 之后，可选收口）
 
 薄接口，不接假 SDK：
 
@@ -307,9 +324,11 @@ IFrameSource
 ## 5. 工程规范
 
 - 提交规范：参考 README 参与贡献节（Feat_xxx 分支 + PR）
-- 不入库的内容：`third_party/`、`build*/`、`models/`、数据集目录不动
+- 不入库的内容：`third_party/`、`build*/`、`models/`、`_onboard/`、数据集目录不动
 - 检测引擎接口（IDetectionEngine / DetectionResult 契约）变更需同步改
   DetectionController、ResultEvaluator、main.cpp 批处理、MainViewModel 四处。
   `detected()` 为分数过线；面积门只影响掩码/框与 `--batch` 对照列
+- 新类别：按 MVTec 布局丢目录 + `models/<类>/weights/onnx/<类>.onnx`，不改 C++ / QML，
+  禁止再加 `if (category == ...)`。无专表工作点走 `DLParams::defaults()`
 - 优先用 Qt / OpenCV / 已接入的成熟库，不要手搓官方已有的控件与交互（详见 AGENTS.md）
 - 每阶段完成：更新本文档状态表与实测指标；跑通两个类别的 `--batch` 无崩溃

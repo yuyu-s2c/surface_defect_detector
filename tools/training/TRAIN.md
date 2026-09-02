@@ -64,3 +64,7 @@ $env:PYTHONUNBUFFERED = "1"; tools\training\.venv\Scripts\python.exe -u tools\tr
 ```
 
 metal_nut 把 `screw` 换成 `metal_nut` 即可。
+
+本脚本 `category` 只认 `metal_nut` / `screw`（anomalib `MVTecAD` 官方类名）。C++ 侧加一类
+产品不改此脚本：按 MVTec 布局丢目录 + 约定 ONNX 即可，见 DEVELOPMENT.md 工作项 3。
+不要为刷表再训 hazelnut / bottle。

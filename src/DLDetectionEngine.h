@@ -34,6 +34,7 @@ public:
 
     // 实际用上的 EP，如 "DML (NVIDIA GeForce RTX 3050 Ti Laptop GPU, 4096 MB)" / "CPU"
     QString activeProvider() const { return m_activeProvider; }
+    QString modelPath() const { return m_modelPath; }
 
     // 加载 ONNX 会话，并用良品训练图标定像素阈值（见类注释）
     bool buildReference(const QStringList& goodImagePaths) override;

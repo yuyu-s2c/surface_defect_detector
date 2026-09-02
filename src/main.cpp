@@ -84,19 +84,25 @@ static int runBatch(const QString& categoryArg, EngineKind engineKind, OrtEpKind
     timer.start();
 
     if (!ctrl.prepareEngine(category)) {
-        out << "ERROR: 无法构建参考模型（" << category
-            << (engineKind == EngineKind::DL
-                    ? QStringLiteral(" 的 ONNX 模型缺失、会话创建失败或良品图不可读；"
-                                     "先跑 tools/training/train_efficientad.py；"
-                                     "DML 失败可试 --provider cpu")
-                    : QStringLiteral("/train/good 为空或不可读）"))
-            << "\n";
+        if (engineKind == EngineKind::DL) {
+            const QStringList tried = ctrl.onnxModelCandidates(category);
+            out << "ERROR: 无法构建 DL 参考模型（" << category
+                << "：ONNX 缺失、会话创建失败或 train/good 不足 3 张）。"
+                << "约定路径: " << tried.value(0)
+                << " ；回退: " << tried.value(1)
+                << "。DML 失败可试 --provider cpu\n";
+        } else {
+            out << "ERROR: 无法构建参考模型（" << category
+                << "/train/good 为空或不可读）\n";
+        }
         return 2;
     }
     out << "参考模板已构建（train/good 共 "
         << dataset.trainGoodImages(category).size() << " 张）\n";
     if (engineKind == EngineKind::DL) {
+        const QString onnx = ctrl.dlModelPath(category);
         const QString ep = ctrl.dlProviderLabel(category);
+        out << "ONNX: " << (onnx.isEmpty() ? QStringLiteral("?") : onnx) << "\n";
         out << "ORT provider: " << (ep.isEmpty() ? QStringLiteral("?") : ep) << "\n";
     }
     out << "\n";
