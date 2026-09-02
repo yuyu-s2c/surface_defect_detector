@@ -4,6 +4,8 @@ import QtQuick.Controls
 
 ColumnLayout {
     spacing: 10
+    enabled: !app.liveRunning && !app.busy
+    opacity: enabled ? 1 : 0.55
 
     component ParamRow: RowLayout {
         property string label: ""
@@ -122,5 +124,18 @@ ColumnLayout {
         color: Theme.warn
         font.pixelSize: Theme.smallSize
         font.family: Theme.fontFamily
+        wrapMode: Text.WordWrap
+        Layout.fillWidth: true
+    }
+
+    Text {
+        text: app.engineKind === 1
+              ? "默认 = 该类 P2 工作点。改 kσ 点应用即可，不必重跑 train/good 标定。叠加面积门只切绿框，不驱动 OK/NG。"
+              : "默认 = v0.1 / P2 工作点。图像级门同时是 CV 的判定阈值（分数=面积）。"
+        color: Theme.textSecondary
+        font.pixelSize: Theme.smallSize
+        font.family: Theme.fontFamily
+        wrapMode: Text.WordWrap
+        Layout.fillWidth: true
     }
 }

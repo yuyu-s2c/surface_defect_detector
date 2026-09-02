@@ -70,6 +70,18 @@ Rectangle {
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
                         }
+                        EngineStatusChip {
+                            Layout.fillWidth: true
+                            implicitHeight: 40
+                        }
+                        Text {
+                            text: app.scoreRuleText
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.smallSize
+                            font.family: Theme.fontFamily
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 8
@@ -88,7 +100,7 @@ Rectangle {
                             Layout.fillWidth: true
                             text: "导出当前图"
                             outlined: true
-                            enabled: app.hasImage
+                            enabled: app.hasImage && !app.busy && !app.liveRunning
                             onClicked: root.exportCurrentClicked()
                         }
                     }
@@ -128,7 +140,9 @@ Rectangle {
                         Layout.fillHeight: true
                         visible: !app.hasMetrics
                         title: "还没有批量指标"
-                        subtitle: "先对当前类别跑批量，才能看到本引擎的 P / R / F1。"
+                        subtitle: app.engineKind === 1 && !app.modelAvailable
+                                  ? "当前类别没有 ONNX，先放到约定路径或改用传统 CV。"
+                                  : "先对当前类别跑批量，才能看到本引擎的 P / R / F1。"
                     }
                 }
             }

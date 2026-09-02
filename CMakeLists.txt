@@ -81,6 +81,9 @@ qt_add_qml_module(surface_defect_detector
         qml/components/AppButton.qml
         qml/components/AppSpinBox.qml
         qml/components/AppDoubleSpin.qml
+        qml/components/ToastBanner.qml
+        qml/components/StationBanner.qml
+        qml/components/EngineStatusChip.qml
     SOURCES
         src/viewmodels/MainViewModel.h
         src/viewmodels/MainViewModel.cpp

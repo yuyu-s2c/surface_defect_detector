@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 import QtQml.Models
 
 Rectangle {
@@ -8,26 +9,51 @@ Rectangle {
     enabled: !app.liveRunning
     opacity: enabled ? 1 : 0.55
 
-    Column {
+    signal openDatasetRequested()
+
+    ColumnLayout {
         anchors.fill: parent
         spacing: 0
 
-        Text {
-            text: "数据集"
-            color: Theme.textSecondary
-            font.pixelSize: Theme.smallSize
-            font.family: Theme.fontFamily
-            leftPadding: 12
-            topPadding: 10
-            bottomPadding: 8
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.leftMargin: 12
+            Layout.rightMargin: 8
+            Layout.topMargin: 8
+            Layout.bottomMargin: 6
+            Text {
+                text: "数据集"
+                color: Theme.textSecondary
+                font.pixelSize: Theme.smallSize
+                font.family: Theme.fontFamily
+                Layout.fillWidth: true
+            }
+            AppButton {
+                text: "打开…"
+                outlined: true
+                enabled: !app.busy && !app.liveRunning
+                onClicked: root.openDatasetRequested()
+            }
         }
 
-        Rectangle { width: parent.width; height: 1; color: Theme.border }
+        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
+
+        Text {
+            visible: app.liveRunning
+            Layout.fillWidth: true
+            Layout.margins: 8
+            text: "取流中：停止后才能选图"
+            color: Theme.warn
+            font.pixelSize: Theme.smallSize
+            font.family: Theme.fontFamily
+            wrapMode: Text.WordWrap
+        }
 
         TreeView {
             id: tree
-            width: parent.width
-            height: parent.height - 32
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            visible: app.hasDataset
             clip: true
             model: app.datasetModel
             boundsBehavior: Flickable.StopAtBounds
@@ -36,6 +62,8 @@ Rectangle {
             selectionModel: ItemSelectionModel {
                 model: app.datasetModel
                 onCurrentChanged: function(current, previous) {
+                    if (app.liveRunning)
+                        return
                     if (current.valid)
                         app.selectFromModelIndex(current)
                 }
@@ -120,8 +148,19 @@ Rectangle {
                     }
                 }
 
-                onClicked: app.selectFromModelIndex(del.idx)
+                onClicked: {
+                    if (!app.liveRunning)
+                        app.selectFromModelIndex(del.idx)
+                }
             }
+        }
+
+        EmptyState {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            visible: !app.hasDataset
+            title: "尚未打开数据集"
+            subtitle: "选择含 metal_nut、screw 等类别目录的根。每个类别需要 train/good 与 test/。"
         }
     }
 

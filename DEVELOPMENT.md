@@ -334,6 +334,20 @@ NG 90 张 = 分数过线张数（88 TP + 2 good FP，与图像级 108/115 一致
 
 回归未漂：`--batch metal_nut` 图像级 58/115、F1 0.2926；`--batch metal_nut --engine dl` 分数口径 108/115、F1 0.269。
 
+### 生产向抛光（3.6 之后，无新阶段号）
+
+在 3.6 工作站骨架上补夜班能看见的状态，**不改算法、不改 P2 工作点、不重做 GUI、不接相机/PLC、不训练**。本云环境是 Linux，没有 MinGW/Qt/DirectML，也没有 gitignore 的 `models/` 权重，未在此跑 Windows `--batch`，指标表不更新。
+
+做了：
+
+- 缺 ONNX / `train/good` 不足：画布横幅给出约定路径，不进工作线程空转，不静默回退 CV；切 DL 时批量/取流按钮灰掉
+- 标定蒙层写明「扫描 train/good，不是训练」；顶栏芯片显示 CV vs EfficientAD、EP、是否已有 `.calib.json`
+- 画布徽章统一为合格/不合格 + 分数过线；取流 HUD/底栏打 OK·NG，NG 闪红边（对应已有 `[DO] REJECT` 日志）
+- 取流中禁止选图/切引擎/批量，画布有锁条；参数夹紧避免脏 QSettings 崩 OpenCV
+- 打开数据集、关于、快捷键、导出成败 toast；空数据集树可恢复
+
+明确没做：Phase 4 `CameraSource` 仍是空壳；未重训 EfficientAD、未改分辨率/类别/工作点；未把工程改成 Linux 构建。
+
 ### Phase 4 产线对接（远期，等实机）
 
 依赖 3.6 的 DirectML、图像级分数、`IFrameSource`。到货后再填，不在本阶段预写协议：

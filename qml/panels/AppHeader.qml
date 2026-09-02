@@ -5,12 +5,14 @@ import QtQuick.Layouts
 Rectangle {
     id: root
     color: Theme.bgPanel
-    height: 52
+    height: 56
 
     signal batchClicked()
     signal compareClicked()
     signal exportCurrentClicked()
     signal exportBatchClicked()
+    signal datasetClicked()
+    signal aboutClicked()
 
     Rectangle {
         anchors.bottom: parent.bottom
@@ -22,15 +24,31 @@ Rectangle {
     RowLayout {
         anchors.fill: parent
         anchors.leftMargin: 16
-        anchors.rightMargin: 16
-        spacing: 16
+        anchors.rightMargin: 12
+        spacing: 10
 
-        Text {
-            text: "表面缺陷检测"
-            color: Theme.textPrimary
-            font.pixelSize: Theme.titleSize
-            font.bold: true
-            font.family: Theme.fontFamily
+        Column {
+            spacing: 1
+            Text {
+                text: "表面缺陷检测"
+                color: Theme.textPrimary
+                font.pixelSize: Theme.titleSize
+                font.bold: true
+                font.family: Theme.fontFamily
+            }
+            Text {
+                text: "离线质检工作站  v" + app.appVersion
+                color: Theme.textSecondary
+                font.pixelSize: 10
+                font.family: Theme.fontFamily
+            }
+        }
+
+        AppButton {
+            text: "数据集"
+            outlined: true
+            enabled: !app.busy && !app.liveRunning
+            onClicked: root.datasetClicked()
         }
 
         Item { Layout.fillWidth: true }
@@ -105,6 +123,12 @@ Rectangle {
             enabled: !app.busy && !app.liveRunning && (app.hasImage || app.canExportBatch)
             onClicked: exportMenu.open()
         }
+
+        AppButton {
+            text: "关于"
+            outlined: true
+            onClicked: root.aboutClicked()
+        }
     }
 
     Menu {
@@ -114,12 +138,12 @@ Rectangle {
         palette.window: Theme.bgElevated
         palette.text: Theme.textPrimary
         MenuItem {
-            text: "导出当前图"
+            text: "导出当前图（PNG）"
             enabled: app.hasImage
             onTriggered: root.exportCurrentClicked()
         }
         MenuItem {
-            text: "导出批量结果"
+            text: "导出批量（PNG + CSV）"
             enabled: app.canExportBatch
             onTriggered: root.exportBatchClicked()
         }

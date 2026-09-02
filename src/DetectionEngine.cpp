@@ -3,6 +3,8 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
 
+#include <algorithm>
+
 cv::Mat DetectionEngine::toGray(const cv::Mat& image)
 {
     if (image.channels() == 1)
@@ -97,7 +99,8 @@ DetectionResult DetectionEngine::detect(const cv::Mat& image) const
     cv::Mat bin;
     cv::threshold(agg, bin, zAggThreshold, 255, cv::THRESH_BINARY);
     bin.convertTo(bin, CV_8U);
-    const int ck = morphCloseKernel | 1;
+    // 核必须为正奇数；QSettings 脏值也不让 getStructuringElement 崩
+    const int ck = (std::max(1, morphCloseKernel) | 1);
     const cv::Mat closeKernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(ck, ck));
     cv::morphologyEx(bin, bin, cv::MORPH_CLOSE, closeKernel);
     const cv::Mat openKernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3));

@@ -74,6 +74,14 @@ public:
     QString dlModelPath(const QString& category) const;
     // anomalib 导出点，其次 models/<类>/<类>.onnx（接入文档约定，不因缺文件而省略）
     QStringList onnxModelCandidates(const QString& category) const;
+    // 约定路径上是否已有 ONNX（GUI 缺模型提示用，不构建会话）
+    bool hasOnnxModel(const QString& category) const;
+    // 模型旁是否已有 .calib.json 文件（不校验 EP/指纹；真伪在 buildReference）
+    bool hasCalibCache(const QString& category) const;
+    bool dlLoadedCalibFromCache(const QString& category) const;
+    int trainGoodCount(const QString& category) const;
+    // GUI 展示当前 EP 策略，尚未建会话时也能看
+    QString ortEpPolicyLabel() const;
 
     // 按类别覆盖可调参数；已缓存的该引擎实例当场改字段（DL 改 k 不重建会话）。
     // CLI 不调用，保持代码内 P2 工作点。

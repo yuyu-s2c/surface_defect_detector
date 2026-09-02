@@ -15,18 +15,20 @@ namespace {
 
 void applyTraditionalParams(DetectionEngine* engine, const TraditionalParams& p)
 {
-    engine->zAggThreshold = p.zAggThreshold;
-    engine->morphCloseKernel = p.morphCloseKernel;
-    engine->minDefectArea = p.minDefectArea;
-    engine->imageLevelMinArea = p.imageLevelMinArea;
+    const TraditionalParams s = p.sanitized();
+    engine->zAggThreshold = s.zAggThreshold;
+    engine->morphCloseKernel = s.morphCloseKernel;
+    engine->minDefectArea = s.minDefectArea;
+    engine->imageLevelMinArea = s.imageLevelMinArea;
 }
 
 void applyDLParams(DLDetectionEngine* engine, const DLParams& p)
 {
-    engine->thresholdSigma = p.thresholdSigma;
-    engine->morphCloseKernel = p.morphCloseKernel;
-    engine->minDefectArea = p.minDefectArea;
-    engine->imageLevelMinArea = p.imageLevelMinArea;
+    const DLParams s = p.sanitized();
+    engine->thresholdSigma = s.thresholdSigma;
+    engine->morphCloseKernel = s.morphCloseKernel;
+    engine->minDefectArea = s.minDefectArea;
+    engine->imageLevelMinArea = s.imageLevelMinArea;
 }
 
 // anomalib Engine.export 落点，其次扁平回退。新类接入只放文件，不改这里的拼接规则。
@@ -106,7 +108,7 @@ void DetectionController::attachProgress(IDetectionEngine* engine, EngineKind ki
         if (m_abort.load())
             return false;
         const QString msg = (kind == EngineKind::DL)
-            ? QStringLiteral("标定 DL 阈值（%1）%2/%3")
+            ? QStringLiteral("标定阈值（%1）%2/%3 — 扫描 train/good，不是训练")
                   .arg(category).arg(current).arg(total)
             : QStringLiteral("构建传统参考模型（%1）%2/%3")
                   .arg(category).arg(current).arg(total);
@@ -182,6 +184,44 @@ QStringList DetectionController::onnxModelCandidates(const QString& category) co
 {
     const QString root = m_dataset.rootPath();
     return {onnxExportedPath(root, category), onnxFallbackPath(root, category)};
+}
+
+bool DetectionController::hasOnnxModel(const QString& category) const
+{
+    return !resolveOnnxModelPath(m_dataset.rootPath(), category).isEmpty();
+}
+
+bool DetectionController::hasCalibCache(const QString& category) const
+{
+    const QString model = resolveOnnxModelPath(m_dataset.rootPath(), category);
+    if (model.isEmpty())
+        return false;
+    return QFileInfo::exists(DLDetectionEngine::calibCachePathFor(model));
+}
+
+bool DetectionController::dlLoadedCalibFromCache(const QString& category) const
+{
+    QMutexLocker lock(&m_mutex);
+    auto* engine = dynamic_cast<DLDetectionEngine*>(m_dlEngines.value(category, nullptr));
+    return engine && engine->loadedCalibFromCache();
+}
+
+int DetectionController::trainGoodCount(const QString& category) const
+{
+    return m_dataset.trainGoodImages(category).size();
+}
+
+QString DetectionController::ortEpPolicyLabel() const
+{
+    switch (ortEpKind()) {
+    case OrtEpKind::Cpu:
+        return QStringLiteral("CPU");
+    case OrtEpKind::Dml:
+        return QStringLiteral("DirectML（强制）");
+    case OrtEpKind::Auto:
+    default:
+        return QStringLiteral("自动（DirectML，失败回 CPU）");
+    }
 }
 
 void DetectionController::setTraditionalParams(const QString& category,
@@ -261,8 +301,12 @@ IDetectionEngine* DetectionController::engineFor(const QString& category)
         return nullptr;
     }
     if (auto* dl = dynamic_cast<DLDetectionEngine*>(newEngine)) {
-        emit progressChanged(0, 0,
-                             QStringLiteral("ONNX 已加载（%1 / %2）").arg(category, dl->activeProvider()));
+        const QString msg = dl->loadedCalibFromCache()
+            ? QStringLiteral("已加载 %1（%2，复用标定缓存）")
+                  .arg(category, dl->activeProvider())
+            : QStringLiteral("已加载 %1（%2，完成阈值标定）")
+                  .arg(category, dl->activeProvider());
+        emit progressChanged(0, 0, msg);
     }
 
     lock.relock();
@@ -370,7 +414,7 @@ void DetectionController::prepareEngineAsync(const QString& category)
     m_busy = true;
     lock.unlock();
     emit busyChanged(true);
-    emit progressChanged(0, 0, QStringLiteral("准备取流引擎…"));
+    emit progressChanged(0, 0, QStringLiteral("准备取流引擎（必要时先标定阈值，不是训练）…"));
     startJob([this, category]() {
         const bool ok = !m_abort.load() && prepareEngine(category);
         if (m_abort.load())

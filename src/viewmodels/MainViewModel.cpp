@@ -62,14 +62,192 @@ QString MainViewModel::imageInfo() const
         .arg(m_currentCategory, m_currentDefectType, QFileInfo(m_currentImagePath).fileName());
 }
 
+QString MainViewModel::scoreRuleText() const
+{
+    return QStringLiteral("OK / NG = 图像分 ≥ 判定阈值（分数过线）。绿叠加面积只影响框，不驱动剔除。");
+}
+
+QString MainViewModel::aboutBody() const
+{
+    return QStringLiteral(
+        "离线质检工作站：文件夹图源、模拟取流、批量评估、PNG/CSV 导出、传统 CV 与 EfficientAD 双引擎。\n\n"
+        "深度学习用本地 ONNX（默认 DirectML，失败回 CPU），不会联网、不会训练。"
+        "权重约定：models/<类别>/weights/onnx/<类别>.onnx。"
+        "首次对该执行器标定会扫描 train/good 并写入同目录 .calib.json（v3，按 EP 分键），之后复用缓存。\n\n"
+        "图像级判定是分数过线，不是掩码面积。面积门只影响绿叠加和 --batch 对照列。\n\n"
+        "本机未接相机 / PLC（Phase 4）。取流是 FolderSource 按 FPS 吐当前类 test/。");
+}
+
+QString MainViewModel::shortcutsHelp() const
+{
+    return QStringLiteral(
+        "空格 开始/停止取流    Esc 停止取流    B 批量    Shift+C 对比引擎\n"
+        "1 传统 CV    2 EfficientAD    G GT 叠加    D 检测叠加    F 适应画面\n"
+        "Ctrl+O 打开数据集    Ctrl+E 导出当前图    Ctrl+Shift+E 导出批量    F1 关于");
+}
+
+TraditionalParams MainViewModel::clampCv(const TraditionalParams& p)
+{
+    return p.sanitized();
+}
+
+DLParams MainViewModel::clampDl(const DLParams& p)
+{
+    return p.sanitized();
+}
+
+QString MainViewModel::missingDlReason(const QString& category) const
+{
+    const QString expected = m_ctrl.onnxModelCandidates(category).value(0);
+    const QString fallback = m_ctrl.onnxModelCandidates(category).value(1);
+    if (!m_ctrl.hasOnnxModel(category)) {
+        return QStringLiteral("未找到 %1 的 ONNX。约定 %2（回退 %3）。"
+                              "请把已训练权重放到该路径，不要改代码。切回传统 CV 仍可检。")
+            .arg(category, expected, fallback);
+    }
+    if (m_ctrl.trainGoodCount(category) < 3) {
+        return QStringLiteral("%1 的 train/good 不足 3 张，无法标定 DL 阈值（不是训练失败）。")
+            .arg(category);
+    }
+    return QStringLiteral("无法准备 %1 的 DL 引擎（ONNX 会话失败或标定未完成；约定 %2）。"
+                          "DirectML 失败可改命令行 --provider cpu。")
+        .arg(category, expected);
+}
+
+bool MainViewModel::dlEngineBlocked(const QString& category) const
+{
+    if (category.isEmpty())
+        return false;
+    return !m_ctrl.hasOnnxModel(category) || m_ctrl.trainGoodCount(category) < 3;
+}
+
+void MainViewModel::showToast(const QString& msg)
+{
+    m_toastMessage = msg;
+    emit toastMessageChanged();
+}
+
+void MainViewModel::clearToast()
+{
+    if (m_toastMessage.isEmpty())
+        return;
+    m_toastMessage.clear();
+    emit toastMessageChanged();
+}
+
+void MainViewModel::setStatusTone(const QString& tone)
+{
+    if (m_statusTone == tone)
+        return;
+    m_statusTone = tone;
+    emit statusTextChanged();
+}
+
+QUrl MainViewModel::datasetRootUrl() const
+{
+    if (m_datasetRoot.isEmpty())
+        return {};
+    return QUrl::fromLocalFile(m_datasetRoot);
+}
+
+void MainViewModel::refreshStationStatus()
+{
+    const bool dl = (currentKind() == EngineKind::DL);
+    QString engineStatus = dl ? QStringLiteral("EfficientAD") : QStringLiteral("传统 CV");
+    QString provider = dl ? m_ctrl.ortEpPolicyLabel() : QStringLiteral("OpenCV CPU");
+    QString expected;
+    bool modelOk = true;
+    bool calibOk = false;
+    QString calibText;
+    QString alert;
+    bool alertErr = false;
+
+    if (!m_currentCategory.isEmpty()) {
+        expected = m_ctrl.onnxModelCandidates(m_currentCategory).value(0);
+        if (dl) {
+            modelOk = m_ctrl.hasOnnxModel(m_currentCategory);
+            calibOk = m_ctrl.hasCalibCache(m_currentCategory);
+            const QString liveEp = m_ctrl.dlProviderLabel(m_currentCategory);
+            if (!liveEp.isEmpty())
+                provider = liveEp;
+            if (!modelOk) {
+                engineStatus = QStringLiteral("EfficientAD · 缺模型");
+                calibText = QStringLiteral("无 ONNX，无法标定");
+                alert = missingDlReason(m_currentCategory);
+                alertErr = true;
+            } else if (m_ctrl.trainGoodCount(m_currentCategory) < 3) {
+                engineStatus = QStringLiteral("EfficientAD · 缺良品");
+                calibText = QStringLiteral("train/good 不足 3 张");
+                alert = missingDlReason(m_currentCategory);
+                alertErr = true;
+            } else if (m_ctrl.dlProviderLabel(m_currentCategory).isEmpty()) {
+                calibText = calibOk
+                    ? QStringLiteral("有标定缓存，加载时复用")
+                    : QStringLiteral("首次将扫描 train/good 标定（不是训练）");
+                if (!calibOk) {
+                    alert = QStringLiteral("该类尚未标定：第一次推理会扫描 train/good 写 .calib.json"
+                                          "（DirectML 约十几秒，不是训练）。");
+                    alertErr = false;
+                }
+            } else {
+                calibText = m_ctrl.dlLoadedCalibFromCache(m_currentCategory)
+                    ? QStringLiteral("已复用标定缓存")
+                    : QStringLiteral("本会话已完成阈值标定");
+            }
+        } else {
+            modelOk = m_ctrl.hasOnnxModel(m_currentCategory);
+            calibOk = m_ctrl.hasCalibCache(m_currentCategory);
+            calibText = QStringLiteral("良品均值/标准差参考");
+            const int n = m_ctrl.trainGoodCount(m_currentCategory);
+            if (n <= 0) {
+                alert = QStringLiteral("%1 的 train/good 为空，传统引擎无法构建参考。")
+                            .arg(m_currentCategory);
+                alertErr = true;
+            }
+        }
+    } else {
+        modelOk = false;
+        calibText = QStringLiteral("未选类别");
+        provider = dl ? m_ctrl.ortEpPolicyLabel() : QStringLiteral("OpenCV CPU");
+    }
+
+    const bool changed = (m_engineStatusText != engineStatus)
+        || (m_providerText != provider)
+        || (m_calibStatusText != calibText)
+        || (m_expectedOnnxPath != expected)
+        || (m_modelAvailable != modelOk)
+        || (m_calibCached != calibOk)
+        || (m_stationAlert != alert)
+        || (m_stationAlertIsError != alertErr);
+    m_engineStatusText = engineStatus;
+    m_providerText = provider;
+    m_calibStatusText = calibText;
+    m_expectedOnnxPath = expected;
+    m_modelAvailable = modelOk;
+    m_calibCached = calibOk;
+    m_stationAlert = alert;
+    m_stationAlertIsError = alertErr;
+    if (changed)
+        emit stationStatusChanged();
+}
+
 bool MainViewModel::canRunBatch() const
 {
-    return !m_busy && !m_liveRunning && !m_liveStarting && !m_currentCategory.isEmpty();
+    if (m_busy || m_liveRunning || m_liveStarting || m_currentCategory.isEmpty())
+        return false;
+    // 缺模型时按钮灰掉，原因写在画布横幅，避免点进去才失败
+    if (currentKind() == EngineKind::DL && dlEngineBlocked(m_currentCategory))
+        return false;
+    return true;
 }
 
 bool MainViewModel::canStartLive() const
 {
-    return !m_busy && !m_liveRunning && !m_liveStarting && !m_currentCategory.isEmpty();
+    if (m_busy || m_liveRunning || m_liveStarting || m_currentCategory.isEmpty())
+        return false;
+    if (currentKind() == EngineKind::DL && dlEngineBlocked(m_currentCategory))
+        return false;
+    return true;
 }
 
 bool MainViewModel::canExportBatch() const
@@ -119,6 +297,7 @@ bool MainViewModel::loadDatasetPath(const QString& path)
     m_currentCategory.clear();
     m_currentDefectType.clear();
     m_currentImagePath.clear();
+    m_missingModelDialogShown = false;
     m_currentBgr.release();
     m_currentGt.release();
     m_sourceImage = {};
@@ -129,7 +308,10 @@ bool MainViewModel::loadDatasetPath(const QString& path)
     emit selectionChanged();
     emit imageChanged();
     emit workEnabledChanged();
+    refreshStationStatus();
+    setStatusTone(QStringLiteral("normal"));
     setStatusText(QStringLiteral("数据集：%1").arg(m_datasetRoot));
+    showToast(QStringLiteral("已加载数据集"));
     return true;
 }
 
@@ -152,6 +334,8 @@ void MainViewModel::selectNode(const QString& nodeType, const QString& category,
         return;
     const bool categoryChanged = (category != m_currentCategory);
     m_currentCategory = category;
+    if (categoryChanged)
+        m_missingModelDialogShown = false;
     if (nodeType == QLatin1String("image")) {
         m_currentDefectType = defectType;
         m_currentImagePath = imagePath;
@@ -160,6 +344,7 @@ void MainViewModel::selectNode(const QString& nodeType, const QString& category,
         loadCurrentImage();
         emit selectionChanged();
         emit workEnabledChanged();
+        refreshStationStatus();
         return;
     }
     if (nodeType == QLatin1String("defect"))
@@ -169,6 +354,7 @@ void MainViewModel::selectNode(const QString& nodeType, const QString& category,
     refreshBatchDependent();
     emit selectionChanged();
     emit workEnabledChanged();
+    refreshStationStatus();
 }
 
 void MainViewModel::loadCurrentImage()
@@ -203,6 +389,18 @@ void MainViewModel::runDetectionForCurrent()
         return;
     if (m_currentBgr.empty() || m_currentCategory.isEmpty())
         return;
+    // 缺 ONNX / 良品时不丢进工作线程：避免转圈后才弹失败，也不静默回退 CV
+    if (currentKind() == EngineKind::DL && dlEngineBlocked(m_currentCategory)) {
+        clearDetection();
+        refreshStationStatus();
+        setStatusTone(QStringLiteral("warn"));
+        setStatusText(missingDlReason(m_currentCategory));
+        if (!m_missingModelDialogShown) {
+            m_missingModelDialogShown = true;
+            raiseError(missingDlReason(m_currentCategory));
+        }
+        return;
+    }
     m_ctrl.prepareAndDetectAsync(m_currentCategory, m_currentBgr);
 }
 
@@ -270,8 +468,10 @@ void MainViewModel::setEngineKind(int kind)
         return;
     m_engineKind = kind;
     m_ctrl.setEngineKind(currentKind());
+    m_missingModelDialogShown = false;
     emit engineKindChanged();
     syncParamsFromSettings();
+    refreshStationStatus();
     runDetectionForCurrent();
     refreshBatchDependent();
     emit workEnabledChanged();
@@ -304,6 +504,7 @@ void MainViewModel::setInspectorTab(int tab)
 
 void MainViewModel::setCvZAggThreshold(double v)
 {
+    v = qBound(0.1, v, 10.0);
     if (qFuzzyCompare(m_cv.zAggThreshold, v))
         return;
     m_cv.zAggThreshold = v;
@@ -314,6 +515,7 @@ void MainViewModel::setCvZAggThreshold(double v)
 
 void MainViewModel::setCvMorphCloseKernel(int v)
 {
+    v = sanitizedMorphKernel(v);
     if (m_cv.morphCloseKernel == v)
         return;
     m_cv.morphCloseKernel = v;
@@ -324,6 +526,7 @@ void MainViewModel::setCvMorphCloseKernel(int v)
 
 void MainViewModel::setCvMinDefectArea(int v)
 {
+    v = qBound(0, v, 100000);
     if (m_cv.minDefectArea == v)
         return;
     m_cv.minDefectArea = v;
@@ -334,6 +537,7 @@ void MainViewModel::setCvMinDefectArea(int v)
 
 void MainViewModel::setCvImageLevelMinArea(int v)
 {
+    v = qBound(0, v, 1000000);
     if (m_cv.imageLevelMinArea == v)
         return;
     m_cv.imageLevelMinArea = v;
@@ -344,6 +548,7 @@ void MainViewModel::setCvImageLevelMinArea(int v)
 
 void MainViewModel::setDlThresholdSigma(double v)
 {
+    v = qBound(0.1, v, 8.0);
     if (qFuzzyCompare(m_dl.thresholdSigma, v))
         return;
     m_dl.thresholdSigma = v;
@@ -354,6 +559,7 @@ void MainViewModel::setDlThresholdSigma(double v)
 
 void MainViewModel::setDlMorphCloseKernel(int v)
 {
+    v = sanitizedMorphKernel(v);
     if (m_dl.morphCloseKernel == v)
         return;
     m_dl.morphCloseKernel = v;
@@ -364,6 +570,7 @@ void MainViewModel::setDlMorphCloseKernel(int v)
 
 void MainViewModel::setDlMinDefectArea(int v)
 {
+    v = qBound(0, v, 100000);
     if (m_dl.minDefectArea == v)
         return;
     m_dl.minDefectArea = v;
@@ -374,6 +581,7 @@ void MainViewModel::setDlMinDefectArea(int v)
 
 void MainViewModel::setDlImageLevelMinArea(int v)
 {
+    v = qBound(0, v, 1000000);
     if (m_dl.imageLevelMinArea == v)
         return;
     m_dl.imageLevelMinArea = v;
@@ -424,7 +632,7 @@ TraditionalParams MainViewModel::loadTraditionalSettings(const QString& category
         p.minDefectArea = s.value(QStringLiteral("minDefectArea")).toInt();
     if (s.contains(QStringLiteral("imageLevelMinArea")))
         p.imageLevelMinArea = s.value(QStringLiteral("imageLevelMinArea")).toInt();
-    return p;
+    return p.sanitized();
 }
 
 DLParams MainViewModel::loadDLSettings(const QString& category) const
@@ -440,7 +648,7 @@ DLParams MainViewModel::loadDLSettings(const QString& category) const
         p.minDefectArea = s.value(QStringLiteral("minDefectArea")).toInt();
     if (s.contains(QStringLiteral("imageLevelMinArea")))
         p.imageLevelMinArea = s.value(QStringLiteral("imageLevelMinArea")).toInt();
-    return p;
+    return p.sanitized();
 }
 
 void MainViewModel::saveParamsToSettings()
@@ -485,17 +693,23 @@ void MainViewModel::applyParams()
     if (m_currentCategory.isEmpty() || m_liveRunning || m_liveStarting)
         return;
     if (currentKind() == EngineKind::DL) {
+        m_dl = clampDl(m_dl);
+        emit dlParamsChanged();
         m_ctrl.setDLParams(m_currentCategory, m_dl);
         m_appliedDl = m_dl;
     } else {
+        m_cv = clampCv(m_cv);
+        emit cvParamsChanged();
         m_ctrl.setTraditionalParams(m_currentCategory, m_cv);
         m_appliedCv = m_cv;
     }
     saveParamsToSettings();
     updateParamsDirty();
     runDetectionForCurrent();
+    setStatusTone(QStringLiteral("normal"));
     setStatusText(QStringLiteral("已应用 %1 / %2 参数")
                       .arg(m_currentCategory, currentEngineName()));
+    showToast(QStringLiteral("参数已应用"));
 }
 
 void MainViewModel::restoreParams()
@@ -518,8 +732,10 @@ void MainViewModel::restoreParams()
     saveParamsToSettings();
     updateParamsDirty();
     runDetectionForCurrent();
+    setStatusTone(QStringLiteral("normal"));
     setStatusText(QStringLiteral("已恢复 %1 / %2 的 P2 默认工作点")
                       .arg(m_currentCategory, currentEngineName()));
+    showToast(QStringLiteral("已恢复 P2 工作点"));
 }
 
 void MainViewModel::runBatch()
@@ -561,6 +777,14 @@ void MainViewModel::startLive()
             raiseError(QStringLiteral("请先选择一个类别"));
         return;
     }
+    if (currentKind() == EngineKind::DL && dlEngineBlocked(m_currentCategory)) {
+        raiseError(missingDlReason(m_currentCategory));
+        return;
+    }
+    m_liveOkCount = 0;
+    m_liveNgCount = 0;
+    m_liveLastNg = false;
+    emit liveStatsChanged();
     m_liveStarting = true;
     emit workEnabledChanged();
     m_ctrl.prepareEngineAsync(m_currentCategory);
@@ -573,8 +797,10 @@ void MainViewModel::stopLive()
     m_session.stop();
     setLiveRunning(false);
     emit workEnabledChanged();
-    if (was)
+    if (was) {
+        setStatusTone(QStringLiteral("normal"));
         setStatusText(QStringLiteral("已停止取流"));
+    }
 }
 
 void MainViewModel::onEnginePrepared(bool ok, const QString& category)
@@ -607,7 +833,9 @@ void MainViewModel::onEnginePrepared(bool ok, const QString& category)
     m_liveActualFps = 0.0;
     emit liveStatsChanged();
     setLiveRunning(true);
+    setStatusTone(QStringLiteral("ok"));
     setStatusText(QStringLiteral("取流中 %1 @ %2 fps…").arg(category).arg(m_liveTargetFps));
+    refreshStationStatus();
 }
 
 void MainViewModel::onLiveFrame(const LiveInspectedFrame& frame)
@@ -640,11 +868,19 @@ void MainViewModel::onLiveFrame(const LiveInspectedFrame& frame)
     emit liveStatsChanged();
 
     const QString verdict = frame.result.detected() ? QStringLiteral("NG") : QStringLiteral("OK");
-    setStatusText(QStringLiteral("取流 %1 fps | 延迟 %2 ms | 队列 %3/%4 | %5 | %6/%7/%8（%9/%10）")
+    if (frame.result.detected())
+        ++m_liveNgCount;
+    else
+        ++m_liveOkCount;
+    m_liveLastNg = frame.result.detected();
+    setStatusTone(m_liveLastNg ? QStringLiteral("ng") : QStringLiteral("ok"));
+    setStatusText(QStringLiteral("取流 %1 fps | 延迟 %2 ms | 队列 %3/%4 | OK %5 · NG %6 | %7 | %8/%9/%10（%11/%12）")
                       .arg(frame.actualFps, 0, 'f', 1)
                       .arg(frame.latencyMs)
                       .arg(frame.queueDepth)
                       .arg(frame.queueMax)
+                      .arg(m_liveOkCount)
+                      .arg(m_liveNgCount)
                       .arg(verdict)
                       .arg(frame.category, frame.defectType, QFileInfo(frame.path).fileName())
                       .arg(frame.done)
@@ -655,7 +891,13 @@ void MainViewModel::onLiveFinished(int total, int ngCount)
 {
     m_liveStarting = false;
     setLiveRunning(false);
-    setStatusText(QStringLiteral("取流结束：%1 张，NG %2").arg(total).arg(ngCount));
+    setStatusTone(ngCount > 0 ? QStringLiteral("ng") : QStringLiteral("ok"));
+    setStatusText(QStringLiteral("取流结束：%1 张，OK %2，NG %3")
+                      .arg(total)
+                      .arg(qMax(0, total - ngCount))
+                      .arg(ngCount));
+    showToast(QStringLiteral("取流结束：NG %1 / %2").arg(ngCount).arg(total));
+    refreshStationStatus();
 }
 
 void MainViewModel::onLiveError(const QString& msg)
@@ -685,8 +927,10 @@ QUrl MainViewModel::suggestedExportFolderUrl() const
 
 bool MainViewModel::exportCurrent(const QUrl& url)
 {
-    if (m_currentBgr.empty())
+    if (m_currentBgr.empty()) {
+        raiseError(QStringLiteral("没有可导出的图，请先从左侧选一张测试图"));
         return false;
+    }
     const QString path = url.toLocalFile();
     if (path.isEmpty())
         return false;
@@ -697,6 +941,7 @@ bool MainViewModel::exportCurrent(const QUrl& url)
         return false;
     }
     setStatusText(QStringLiteral("已导出 %1").arg(path));
+    showToast(QStringLiteral("已导出当前图"));
     return true;
 }
 
@@ -716,6 +961,7 @@ bool MainViewModel::exportBatch(const QUrl& folder)
         return false;
     }
     setStatusText(QStringLiteral("已导出批量结果到 %1").arg(dir));
+    showToast(QStringLiteral("已导出批量 PNG + CSV"));
     return true;
 }
 
@@ -804,7 +1050,35 @@ void MainViewModel::onProgress(int current, int total, const QString& text)
     m_progressCurrent = current;
     m_progressTotal = total;
     m_progressText = text;
+    // 蒙层副标题：夜班要能一眼看出「标定 ≠ 训练」
+    if (text.contains(QStringLiteral("标定"))) {
+        m_busyKind = QStringLiteral("calib");
+        m_busySubtitle = QStringLiteral("正在扫描 train/good 标定阈值，这不是训练。完成后写入 .calib.json。");
+    } else if (text.contains(QStringLiteral("加载 ONNX")) || text.contains(QStringLiteral("已加载"))) {
+        m_busyKind = QStringLiteral("load");
+        m_busySubtitle = QStringLiteral("加载本地权重，不会联网、不会训练。");
+    } else if (text.contains(QStringLiteral("取流"))) {
+        m_busyKind = QStringLiteral("livePrep");
+        m_busySubtitle = QStringLiteral("取流前准备引擎。若无标定缓存，会先扫描良品图。");
+    } else if (text.contains(QStringLiteral("对比"))) {
+        m_busyKind = QStringLiteral("compare");
+        m_busySubtitle = QStringLiteral("缺哪侧批量就补跑哪侧，口径与 --batch 相同。");
+    } else if (text.contains(QStringLiteral("检测")) && total > 0) {
+        m_busyKind = QStringLiteral("batch");
+        m_busySubtitle.clear();
+    } else if (text.contains(QStringLiteral("推理")) || text.contains(QStringLiteral("准备检测"))) {
+        m_busyKind = QStringLiteral("detect");
+        m_busySubtitle.clear();
+    } else if (text.contains(QStringLiteral("构建传统"))) {
+        m_busyKind = QStringLiteral("calib");
+        m_busySubtitle = QStringLiteral("用 train/good 建均值/标准差参考，不是训练网络。");
+    } else {
+        m_busyKind = m_busy ? QStringLiteral("busy") : QString();
+        m_busySubtitle.clear();
+    }
     emit progressChanged();
+    if (m_busy)
+        setStatusTone(QStringLiteral("busy"));
     setStatusText(text);
 }
 
@@ -815,23 +1089,42 @@ void MainViewModel::onBusyChanged(bool busy)
     m_busy = busy;
     emit busyChanged();
     emit workEnabledChanged();
+    if (!busy) {
+        m_busyKind.clear();
+        m_busySubtitle.clear();
+        emit progressChanged();
+        refreshStationStatus();
+        if (!m_liveRunning)
+            setStatusTone(QStringLiteral("normal"));
+    }
 }
 
 void MainViewModel::onDetectFinished(bool ok, const DetectionResult& result)
 {
     if (!ok) {
         clearDetection();
-        if (currentKind() == EngineKind::DL) {
-            const QString expected = m_ctrl.onnxModelCandidates(m_currentCategory).value(0);
-            setStatusText(QStringLiteral("无法加载 %1 的 DL 引擎（ONNX 缺失或 train/good 不足 3 张；约定 %2）")
-                              .arg(m_currentCategory, expected));
-        } else {
-            setStatusText(QStringLiteral("无法加载 %1 的传统引擎（train/good 为空或不可读）")
-                              .arg(m_currentCategory));
+        refreshStationStatus();
+        const QString reason = (currentKind() == EngineKind::DL)
+            ? missingDlReason(m_currentCategory)
+            : QStringLiteral("无法加载 %1 的传统引擎（train/good 为空或不可读）")
+                  .arg(m_currentCategory);
+        setStatusTone(QStringLiteral("warn"));
+        setStatusText(reason);
+        if (!m_missingModelDialogShown) {
+            m_missingModelDialogShown = true;
+            raiseError(reason);
         }
         return;
     }
+    m_missingModelDialogShown = false;
     applyDetectionResult(result);
+    refreshStationStatus();
+    setStatusTone(result.detected() ? QStringLiteral("ng") : QStringLiteral("ok"));
+    const QString verdict = result.detected() ? QStringLiteral("NG") : QStringLiteral("OK");
+    setStatusText(QStringLiteral("%1  %2  分 %3 / 阈 %4")
+                      .arg(verdict, imageInfo())
+                      .arg(result.imageScore, 0, 'f', 4)
+                      .arg(qIsFinite(result.imageThreshold) ? result.imageThreshold : 0.0, 0, 'f', 4));
 }
 
 void MainViewModel::onBatchFinished(bool ok, const QString& category)
@@ -849,8 +1142,11 @@ void MainViewModel::onBatchFinished(bool ok, const QString& category)
     }
     refreshBatchDependent();
     setInspectorTab(2);
+    setStatusTone(QStringLiteral("ok"));
     setStatusText(QStringLiteral("已完成 %1 批量检测（%2）")
                       .arg(category, currentEngineName()));
+    showToast(QStringLiteral("批量完成，见右侧「指标」"));
+    refreshStationStatus();
 }
 
 void MainViewModel::onCompareFinished(bool ok, const QString& category)
@@ -861,5 +1157,8 @@ void MainViewModel::onCompareFinished(bool ok, const QString& category)
     }
     refreshBatchDependent();
     setInspectorTab(3);
+    setStatusTone(QStringLiteral("ok"));
     setStatusText(QStringLiteral("已完成 %1 双引擎对比").arg(category));
+    showToast(QStringLiteral("对比完成，见右侧「对比」"));
+    refreshStationStatus();
 }

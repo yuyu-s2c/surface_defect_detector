@@ -332,6 +332,8 @@ static int runGui(int argc, char* argv[])
     QGuiApplication app(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("surface_defect_detector"));
     QCoreApplication::setApplicationName(QStringLiteral("surface_defect_detector"));
+    QCoreApplication::setApplicationVersion(QStringLiteral("0.1"));
+    QCoreApplication::setApplicationVersion(QStringLiteral("0.1"));
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
     auto* vm = new MainViewModel(&app);

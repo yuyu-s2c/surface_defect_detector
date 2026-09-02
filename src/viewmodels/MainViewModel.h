@@ -33,6 +33,25 @@ class MainViewModel : public QObject
     Q_PROPERTY(QString currentDefectType READ currentDefectType NOTIFY selectionChanged)
     Q_PROPERTY(QString currentImagePath READ currentImagePath NOTIFY selectionChanged)
     Q_PROPERTY(QString imageInfo READ imageInfo NOTIFY selectionChanged)
+    Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
+    Q_PROPERTY(QString scoreRuleText READ scoreRuleText CONSTANT)
+    Q_PROPERTY(QString aboutBody READ aboutBody CONSTANT)
+    Q_PROPERTY(QString shortcutsHelp READ shortcutsHelp CONSTANT)
+    Q_PROPERTY(QString engineStatusText READ engineStatusText NOTIFY stationStatusChanged)
+    Q_PROPERTY(QString providerText READ providerText NOTIFY stationStatusChanged)
+    Q_PROPERTY(QString calibStatusText READ calibStatusText NOTIFY stationStatusChanged)
+    Q_PROPERTY(QString expectedOnnxPath READ expectedOnnxPath NOTIFY stationStatusChanged)
+    Q_PROPERTY(bool modelAvailable READ modelAvailable NOTIFY stationStatusChanged)
+    Q_PROPERTY(bool calibCached READ calibCached NOTIFY stationStatusChanged)
+    Q_PROPERTY(QString stationAlert READ stationAlert NOTIFY stationStatusChanged)
+    Q_PROPERTY(bool stationAlertIsError READ stationAlertIsError NOTIFY stationStatusChanged)
+    Q_PROPERTY(QString toastMessage READ toastMessage NOTIFY toastMessageChanged)
+    Q_PROPERTY(QString busyKind READ busyKind NOTIFY progressChanged)
+    Q_PROPERTY(QString busySubtitle READ busySubtitle NOTIFY progressChanged)
+    Q_PROPERTY(int liveOkCount READ liveOkCount NOTIFY liveStatsChanged)
+    Q_PROPERTY(int liveNgCount READ liveNgCount NOTIFY liveStatsChanged)
+    Q_PROPERTY(bool liveLastNg READ liveLastNg NOTIFY liveStatsChanged)
+    Q_PROPERTY(QString statusTone READ statusTone NOTIFY statusTextChanged)
     Q_PROPERTY(int engineKind READ engineKind WRITE setEngineKind NOTIFY engineKindChanged)
     Q_PROPERTY(bool gtOverlayVisible READ gtOverlayVisible WRITE setGtOverlayVisible NOTIFY overlayChanged)
     Q_PROPERTY(bool detOverlayVisible READ detOverlayVisible WRITE setDetOverlayVisible NOTIFY overlayChanged)
@@ -99,6 +118,25 @@ public:
     QString currentDefectType() const { return m_currentDefectType; }
     QString currentImagePath() const { return m_currentImagePath; }
     QString imageInfo() const;
+    QString appVersion() const { return QStringLiteral("0.1"); }
+    QString scoreRuleText() const;
+    QString aboutBody() const;
+    QString shortcutsHelp() const;
+    QString engineStatusText() const { return m_engineStatusText; }
+    QString providerText() const { return m_providerText; }
+    QString calibStatusText() const { return m_calibStatusText; }
+    QString expectedOnnxPath() const { return m_expectedOnnxPath; }
+    bool modelAvailable() const { return m_modelAvailable; }
+    bool calibCached() const { return m_calibCached; }
+    QString stationAlert() const { return m_stationAlert; }
+    bool stationAlertIsError() const { return m_stationAlertIsError; }
+    QString toastMessage() const { return m_toastMessage; }
+    QString busyKind() const { return m_busyKind; }
+    QString busySubtitle() const { return m_busySubtitle; }
+    int liveOkCount() const { return m_liveOkCount; }
+    int liveNgCount() const { return m_liveNgCount; }
+    bool liveLastNg() const { return m_liveLastNg; }
+    QString statusTone() const { return m_statusTone; }
     int engineKind() const { return m_engineKind; }
     bool gtOverlayVisible() const { return m_gtOverlayVisible; }
     bool detOverlayVisible() const { return m_detOverlayVisible; }
@@ -180,6 +218,8 @@ public:
     Q_INVOKABLE bool exportBatch(const QUrl& folder);
     Q_INVOKABLE QUrl suggestedExportFileUrl() const;
     Q_INVOKABLE QUrl suggestedExportFolderUrl() const;
+    Q_INVOKABLE QUrl datasetRootUrl() const;
+    Q_INVOKABLE void clearToast();
 
 signals:
     void hasDatasetChanged();
@@ -202,6 +242,8 @@ signals:
     void hasCompareChanged();
     void cvParamsChanged();
     void dlParamsChanged();
+    void stationStatusChanged();
+    void toastMessageChanged();
 
 private:
     EngineKind currentKind() const;
@@ -222,6 +264,13 @@ private:
     void refreshBatchDependent();
     void refreshMetrics();
     void refreshCompare();
+    void refreshStationStatus();
+    void showToast(const QString& msg);
+    void setStatusTone(const QString& tone);
+    TraditionalParams clampCv(const TraditionalParams& p);
+    DLParams clampDl(const DLParams& p);
+    QString missingDlReason(const QString& category) const;
+    bool dlEngineBlocked(const QString& category) const;
 
     void onProgress(int current, int total, const QString& text);
     void onBusyChanged(bool busy);
@@ -274,6 +323,22 @@ private:
     QString m_statusText = QStringLiteral("就绪");
     QString m_progressText;
     QString m_errorMessage;
+    QString m_engineStatusText = QStringLiteral("传统 CV");
+    QString m_providerText;
+    QString m_calibStatusText;
+    QString m_expectedOnnxPath;
+    QString m_stationAlert;
+    QString m_toastMessage;
+    QString m_busyKind;
+    QString m_busySubtitle;
+    QString m_statusTone = QStringLiteral("normal");
+    bool m_modelAvailable = false;
+    bool m_calibCached = false;
+    bool m_stationAlertIsError = false;
+    bool m_missingModelDialogShown = false;
+    int m_liveOkCount = 0;
+    int m_liveNgCount = 0;
+    bool m_liveLastNg = false;
     QString m_compareCvF1;
     QString m_compareDlF1;
     QString m_compareDeltaF1;

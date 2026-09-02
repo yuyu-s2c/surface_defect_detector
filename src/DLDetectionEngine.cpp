@@ -19,6 +19,7 @@
 #include <dxgi.h>
 
 #include <cstring>
+#include <algorithm>
 #include <limits>
 #include <vector>
 
@@ -181,6 +182,11 @@ void saveCalibCache(const QString& path, qint64 modelSize, qint64 modelMtimeMs,
 }
 } // namespace
 
+QString DLDetectionEngine::calibCachePathFor(const QString& modelPath)
+{
+    return calibCachePath(modelPath);
+}
+
 DLDetectionEngine::DLDetectionEngine(const QString& modelPath, OrtEpKind epKind)
     : m_modelPath(modelPath)
     , m_epKind(epKind)
@@ -200,6 +206,7 @@ bool DLDetectionEngine::buildReference(const QStringList& goodImagePaths)
     m_calibMean = 0.0;
     m_calibStd = 0.0;
     m_imageScores.clear();
+    m_loadedCalibFromCache = false;
 
     if (!QFileInfo::exists(m_modelPath)) {
         qWarning() << "DL 模型不存在:" << m_modelPath
@@ -251,6 +258,7 @@ bool DLDetectionEngine::buildReference(const QStringList& goodImagePaths)
                 << "k=" << thresholdSigma
                 << "-> pixelThr=" << (m_calibMean + thresholdSigma * m_calibStd)
                 << "imageThr=" << currentImageThreshold();
+        m_loadedCalibFromCache = true;
         return true;
     }
 
@@ -437,7 +445,8 @@ DetectionResult DLDetectionEngine::detect(const cv::Mat& image) const
     cv::Mat bin;
     cv::threshold(heat, bin, threshold, 255, cv::THRESH_BINARY);
     bin.convertTo(bin, CV_8U);
-    const int ck = morphCloseKernel | 1;
+    // 核必须为正奇数；QSettings 脏值或未点应用时也不让 OpenCV 抛
+    const int ck = (std::max(1, morphCloseKernel) | 1);
     const cv::Mat closeKernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(ck, ck));
     cv::morphologyEx(bin, bin, cv::MORPH_CLOSE, closeKernel);
     const cv::Mat openKernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3));

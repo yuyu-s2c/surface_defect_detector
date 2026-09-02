@@ -35,6 +35,9 @@ public:
     // 实际用上的 EP，如 "DML (NVIDIA GeForce RTX 3050 Ti Laptop GPU, 4096 MB)" / "CPU"
     QString activeProvider() const { return m_activeProvider; }
     QString modelPath() const { return m_modelPath; }
+    // 模型旁 <名>.calib.json；GUI 用来显示「有没有缓存」，不表示 EP 一定匹配
+    static QString calibCachePathFor(const QString& modelPath);
+    bool loadedCalibFromCache() const { return m_loadedCalibFromCache; }
 
     // 加载 ONNX 会话，并用良品训练图标定像素阈值（见类注释）
     bool buildReference(const QStringList& goodImagePaths) override;
@@ -66,6 +69,7 @@ private:
     std::unique_ptr<Ort::Session> m_session; // ORT 会话（Env 为进程级静态共享）
     QString m_activeProvider;     // 给人看
     QString m_calibProviderKey;   // 标定缓存键："dml" / "cpu"
+    bool m_loadedCalibFromCache = false;
     // 良品热图最大值的均值/标准差。detect() 用 mean + kσ 切掩码，改 k 不必重跑标定
     double m_calibMean = 0.0;
     double m_calibStd = 0.0;
