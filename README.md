@@ -5,8 +5,8 @@
 阶段状态、架构、构建命令和实测指标见 [DEVELOPMENT.md](DEVELOPMENT.md)。
 给 AI 代理的约定见 [AGENTS.md](AGENTS.md)。训练见 [tools/training/TRAIN.md](tools/training/TRAIN.md)。
 
-当前进度：Phase 1～3.5 已完成；Phase 3.6 工作项 1～3（DirectML / 图像级分数 /
-新类别零改代码接入）已完成。接下来是工作项 4 模拟取流。Phase 4 产线对接等实机。
+当前进度：Phase 1～3.6 已完成（DirectML / 图像级分数过线 / 新类别零改代码接入 /
+模拟取流）。Phase 4 产线对接等实机，只换 `CameraSource`。
 
 ```bash
 # GUI
@@ -16,9 +16,11 @@
 ./build/surface_defect_detector.exe --batch metal_nut
 ./build/surface_defect_detector.exe --batch metal_nut --engine dl
 ./build/surface_defect_detector.exe --batch metal_nut --engine dl --provider cpu
+./build/surface_defect_detector.exe --live-smoke metal_nut --engine dl --fps 5
 ```
 
-GUI 为暗色质检台（QML）：红=GT 标注，绿=检测结果。DL 默认 DirectML（失败回 CPU）。
+GUI 为暗色质检台（QML）：红=GT 标注，绿=检测结果。顶栏可按设定 FPS 模拟取流（文件夹源吐 test/），
+画布叠延迟/队列/合格·不合格；NG 打 `[DO] REJECT` 日志。DL 默认 DirectML（失败回 CPU）。
 切深度学习时若尚无该 EP 的标定缓存，会跑一遍 `train/good`（DML 约十几秒，不是训练）；
 之后启动复用模型旁的 `.calib.json`（v3，键含 EP）。`--batch` 图像级默认分数过线，
 另打面积门对照列；不读 GUI 设置。`--provider cpu|dml|auto`。

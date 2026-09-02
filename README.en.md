@@ -5,18 +5,20 @@ Desktop tool for industrial surface defect detection (Qt6 Quick / QML + OpenCV +
 Status, architecture, build commands and measured metrics: [DEVELOPMENT.md](DEVELOPMENT.md).
 Agent conventions: [AGENTS.md](AGENTS.md). Training: [tools/training/TRAIN.md](tools/training/TRAIN.md).
 
-Phases 1–3.5 are done (CV baseline / EfficientAD / engineering / QML MVVM).
-Phase 3.6 work items 1–3 (DirectML, image-level score, zero-code new-category onboarding)
-are done. Next: work item 4 (folder frame source). Phase 4 (camera/PLC) waits on hardware.
+Phases 1–3.6 are done (DirectML, image-level score, zero-code new-category onboarding,
+simulated folder streaming). Phase 4 (camera/PLC) waits on hardware; swap in `CameraSource`.
 
 ```bash
 ./build/surface_defect_detector.exe
 ./build/surface_defect_detector.exe --batch metal_nut
 ./build/surface_defect_detector.exe --batch metal_nut --engine dl
 ./build/surface_defect_detector.exe --batch metal_nut --engine dl --provider cpu
+./build/surface_defect_detector.exe --live-smoke metal_nut --engine dl --fps 5
 ```
 
-GUI overlay: red = ground-truth mask, green = detection. DL defaults to DirectML (CPU fallback).
+GUI overlay: red = ground-truth mask, green = detection. Header can stream `test/` at a set FPS
+(folder source); canvas shows latency / queue / OK·NG; rejects log `[DO] REJECT`.
+DL defaults to DirectML (CPU fallback).
 Switching to DL calibrates on `train/good` once per execution provider (DirectML is tens of seconds; that is not training) and writes `<model>.calib.json` (v3, keyed by EP) next to the ONNX file.
 `--batch` image-level defaults to score-over-threshold and still prints the area-gate column for comparison; it does not read GUI settings. `--provider cpu|dml|auto`.
 

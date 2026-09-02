@@ -40,6 +40,16 @@ set(PROJECT_SOURCES
     src/ResultExporter.cpp
     src/ResultEvaluator.h
     src/ResultEvaluator.cpp
+    src/InspectionSession.h
+    src/InspectionSession.cpp
+    src/sources/IFrameSource.h
+    src/sources/IRejectSink.h
+    src/sources/LogRejectSink.h
+    src/sources/LogRejectSink.cpp
+    src/sources/FolderSource.h
+    src/sources/FolderSource.cpp
+    src/sources/CameraSource.h
+    src/sources/CameraSource.cpp
 )
 
 qt_add_executable(surface_defect_detector ${PROJECT_SOURCES})
@@ -65,6 +75,7 @@ qt_add_qml_module(surface_defect_detector
         qml/components/MetricsTable.qml
         qml/components/CompareView.qml
         qml/components/BusyOverlay.qml
+        qml/components/LiveHud.qml
         qml/components/EmptyState.qml
         qml/components/AppStatusBar.qml
         qml/components/AppButton.qml

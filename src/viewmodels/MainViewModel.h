@@ -6,6 +6,7 @@
 #include "DetectionController.h"
 #include "EngineParams.h"
 #include "IDetectionEngine.h"
+#include "InspectionSession.h"
 #include "MetricsListModel.h"
 
 #include <QImage>
@@ -37,6 +38,13 @@ class MainViewModel : public QObject
     Q_PROPERTY(bool detOverlayVisible READ detOverlayVisible WRITE setDetOverlayVisible NOTIFY overlayChanged)
     Q_PROPERTY(bool hasImage READ hasImage NOTIFY imageChanged)
     Q_PROPERTY(bool canRunBatch READ canRunBatch NOTIFY workEnabledChanged)
+    Q_PROPERTY(bool canStartLive READ canStartLive NOTIFY workEnabledChanged)
+    Q_PROPERTY(bool liveRunning READ liveRunning NOTIFY liveRunningChanged)
+    Q_PROPERTY(int liveTargetFps READ liveTargetFps WRITE setLiveTargetFps NOTIFY liveTargetFpsChanged)
+    Q_PROPERTY(int liveLatencyMs READ liveLatencyMs NOTIFY liveStatsChanged)
+    Q_PROPERTY(int liveQueueDepth READ liveQueueDepth NOTIFY liveStatsChanged)
+    Q_PROPERTY(int liveQueueMax READ liveQueueMax CONSTANT)
+    Q_PROPERTY(double liveActualFps READ liveActualFps NOTIFY liveStatsChanged)
     Q_PROPERTY(bool canExportBatch READ canExportBatch NOTIFY workEnabledChanged)
     Q_PROPERTY(bool paramsDirty READ paramsDirty NOTIFY paramsDirtyChanged)
     Q_PROPERTY(bool detected READ detected NOTIFY detectionChanged)
@@ -77,6 +85,7 @@ class MainViewModel : public QObject
 
 public:
     explicit MainViewModel(QObject* parent = nullptr);
+    ~MainViewModel() override;
 
     bool hasDataset() const { return m_hasDataset; }
     bool busy() const { return m_busy; }
@@ -95,6 +104,13 @@ public:
     bool detOverlayVisible() const { return m_detOverlayVisible; }
     bool hasImage() const { return !m_sourceImage.isNull(); }
     bool canRunBatch() const;
+    bool canStartLive() const;
+    bool liveRunning() const { return m_liveRunning; }
+    int liveTargetFps() const { return m_liveTargetFps; }
+    int liveLatencyMs() const { return m_liveLatencyMs; }
+    int liveQueueDepth() const { return m_liveQueueDepth; }
+    int liveQueueMax() const { return InspectionSession::kMaxQueue; }
+    double liveActualFps() const { return m_liveActualFps; }
     bool canExportBatch() const;
     bool paramsDirty() const { return m_paramsDirty; }
     bool detected() const { return m_detected; }
@@ -157,6 +173,9 @@ public:
     Q_INVOKABLE void restoreParams();
     Q_INVOKABLE void runBatch();
     Q_INVOKABLE void compareEngines();
+    Q_INVOKABLE void startLive();
+    Q_INVOKABLE void stopLive();
+    void setLiveTargetFps(int fps);
     Q_INVOKABLE bool exportCurrent(const QUrl& url);
     Q_INVOKABLE bool exportBatch(const QUrl& folder);
     Q_INVOKABLE QUrl suggestedExportFileUrl() const;
@@ -173,6 +192,9 @@ signals:
     void overlayChanged();
     void imageChanged();
     void workEnabledChanged();
+    void liveRunningChanged();
+    void liveTargetFpsChanged();
+    void liveStatsChanged();
     void paramsDirtyChanged();
     void detectionChanged();
     void inspectorTabChanged();
@@ -204,10 +226,16 @@ private:
     void onProgress(int current, int total, const QString& text);
     void onBusyChanged(bool busy);
     void onDetectFinished(bool ok, const DetectionResult& result);
+    void onEnginePrepared(bool ok, const QString& category);
     void onBatchFinished(bool ok, const QString& category);
     void onCompareFinished(bool ok, const QString& category);
+    void onLiveFrame(const LiveInspectedFrame& frame);
+    void onLiveFinished(int total, int ngCount);
+    void onLiveError(const QString& msg);
+    void setLiveRunning(bool running);
 
     DetectionController m_ctrl;
+    InspectionSession m_session;
     DatasetTreeModel* m_datasetModel = nullptr;
     BoxListModel* m_boxModel = nullptr;
     MetricsListModel* m_metricsModel = nullptr;
@@ -223,7 +251,13 @@ private:
     bool m_verdictOk = true;
     bool m_hasMetrics = false;
     bool m_hasCompare = false;
+    bool m_liveRunning = false;
+    bool m_liveStarting = false;
     int m_engineKind = 0;
+    int m_liveTargetFps = InspectionSession::kDefaultFps;
+    int m_liveLatencyMs = 0;
+    int m_liveQueueDepth = 0;
+    double m_liveActualFps = 0.0;
     int m_progressCurrent = 0;
     int m_progressTotal = 0;
     int m_inspectorTab = 0;

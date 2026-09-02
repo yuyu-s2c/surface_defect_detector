@@ -1,16 +1,21 @@
 #include "DetectionController.h"
+#include "InspectionSession.h"
 #include "MainViewModel.h"
 #include "ResultEvaluator.h"
+#include "sources/FolderSource.h"
 
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
 #include <QTextStream>
+
+#include <memory>
 
 // 在可执行文件的上级/上上级目录中寻找数据集根（含 metal_nut、screw 等类别目录）
 static QString locateDatasetRoot()
@@ -198,6 +203,130 @@ static int runBatch(const QString& categoryArg, EngineKind engineKind, OrtEpKind
     return 0;
 }
 
+// 无头冒烟：FolderSource 跑完一类 test，打印帧率/延迟/队列后退出。不是产品 --live。
+static int runLiveSmoke(const QString& categoryArg, EngineKind engineKind, OrtEpKind epKind, int fps)
+{
+    QTextStream out(stdout);
+
+    QString datasetRoot;
+    QString category;
+    if (QFileInfo::exists(categoryArg) && QFileInfo(categoryArg).isDir()
+        && QDir(categoryArg + QStringLiteral("/test")).exists()) {
+        const QFileInfo catInfo(categoryArg);
+        datasetRoot = catInfo.absolutePath();
+        category = catInfo.fileName();
+    } else {
+        datasetRoot = locateDatasetRoot();
+        category = categoryArg;
+    }
+
+    if (datasetRoot.isEmpty()) {
+        out << "ERROR: 未找到数据集根目录\n";
+        return 2;
+    }
+
+    DetectionController ctrl;
+    ctrl.setEngineKind(engineKind);
+    ctrl.setOrtEpKind(epKind);
+    if (!ctrl.loadDataset(datasetRoot)) {
+        out << "ERROR: 数据集扫描失败：" << datasetRoot << "\n";
+        return 2;
+    }
+    if (!ctrl.dataset().categories().contains(category)) {
+        out << "ERROR: 没有类别 " << category << "\n";
+        return 2;
+    }
+    if (!ctrl.prepareEngine(category)) {
+        out << "ERROR: 无法准备引擎（" << category << "）\n";
+        return 2;
+    }
+
+    fps = qBound(InspectionSession::kMinFps, fps, InspectionSession::kMaxFps);
+    auto src = std::make_unique<FolderSource>();
+    src->setFromDataset(ctrl.dataset(), category);
+    src->setFps(fps);
+    const int planned = src->plannedCount();
+
+    InspectionSession session(ctrl);
+    int lastDone = 0;
+    int lastQueue = 0;
+    qint64 lastLatency = 0;
+    double lastFps = 0.0;
+    qint64 maxLatency = 0;
+    int maxQueue = 0;
+    QObject::connect(&session, &InspectionSession::frameInspected, &session,
+                     [&](const LiveInspectedFrame& f) {
+        lastDone = f.done;
+        lastQueue = f.queueDepth;
+        lastLatency = f.latencyMs;
+        lastFps = f.actualFps;
+        maxLatency = qMax(maxLatency, f.latencyMs);
+        maxQueue = qMax(maxQueue, f.queueDepth);
+        if (f.done == 1 || f.done == planned || (f.done % 25) == 0) {
+            out << QStringLiteral("  %1/%2 %3 fps queue=%4 latency=%5 ms %6\n")
+                       .arg(f.done)
+                       .arg(f.total)
+                       .arg(f.actualFps, 0, 'f', 1)
+                       .arg(f.queueDepth)
+                       .arg(f.latencyMs)
+                       .arg(f.result.detected() ? QStringLiteral("NG") : QStringLiteral("OK"));
+            out.flush();
+        }
+    });
+
+    int finishedTotal = -1;
+    int finishedNg = -1;
+    QEventLoop loop;
+    QObject::connect(&session, &InspectionSession::finished, &session,
+                     [&](int total, int ng) {
+        finishedTotal = total;
+        finishedNg = ng;
+        loop.quit();
+    });
+    QObject::connect(&session, &InspectionSession::errorOccurred, &session,
+                     [&](const QString& msg) {
+        out << "ERROR: " << msg << "\n";
+        loop.quit();
+    });
+
+    out << "live-smoke " << category
+        << " engine=" << (engineKind == EngineKind::DL ? QStringLiteral("dl") : QStringLiteral("cv"))
+        << " fps=" << fps << " frames=" << planned << "\n";
+    out.flush();
+
+    QElapsedTimer wall;
+    wall.start();
+    if (!session.start(std::move(src), category)) {
+        out << "ERROR: InspectionSession 启动失败\n";
+        return 2;
+    }
+    loop.exec();
+    session.stop();
+    const double elapsed = wall.elapsed() / 1000.0;
+
+    if (finishedTotal < 0) {
+        out << "ERROR: 取流未正常结束\n";
+        return 2;
+    }
+    out << QStringLiteral("done=%1 ng=%2 elapsed=%3 s effective=%4 fps\n")
+               .arg(finishedTotal)
+               .arg(finishedNg)
+               .arg(elapsed, 0, 'f', 2)
+               .arg(finishedTotal > 0 && elapsed > 0 ? finishedTotal / elapsed : 0.0, 0, 'f', 2);
+    out << QStringLiteral("last: actual=%1 fps queue=%2 latency=%3 ms; max queue=%4 max latency=%5 ms\n")
+               .arg(lastFps, 0, 'f', 1)
+               .arg(lastQueue)
+               .arg(lastLatency)
+               .arg(maxQueue)
+               .arg(maxLatency);
+    if (finishedTotal != planned) {
+        out << "ERROR: 未跑完（计划 " << planned << " 张，实际 " << finishedTotal << "）\n";
+        return 2;
+    }
+    out.flush();
+    return 0;
+}
+
 static int runGui(int argc, char* argv[])
 {
     QGuiApplication app(argc, argv);
@@ -231,14 +360,16 @@ int main(int argc, char* argv[])
     for (int i = 0; i < argc; ++i)
         raw << QString::fromLocal8Bit(argv[i]);
 
+    const int liveSmokeIdx = raw.indexOf(QStringLiteral("--live-smoke"));
     const int batchIdx = raw.indexOf(QStringLiteral("--batch"));
-    if (batchIdx >= 0) {
+    if (liveSmokeIdx >= 0 || batchIdx >= 0) {
         QCoreApplication core(argc, argv);
         QCoreApplication::setOrganizationName(QStringLiteral("surface_defect_detector"));
         QCoreApplication::setApplicationName(QStringLiteral("surface_defect_detector"));
-        if (batchIdx + 1 >= raw.size()) {
-            QTextStream(stderr) << "用法: surface_defect_detector --batch <类别目录或类别名>"
-                                   " [--engine cv|dl] [--provider auto|cpu|dml]\n";
+        const int catIdx = liveSmokeIdx >= 0 ? liveSmokeIdx : batchIdx;
+        if (catIdx + 1 >= raw.size()) {
+            QTextStream(stderr) << "用法: surface_defect_detector --batch|--live-smoke <类别>"
+                                   " [--engine cv|dl] [--provider auto|cpu|dml] [--fps N]\n";
             return 2;
         }
         EngineKind engineKind = EngineKind::Traditional;
@@ -267,7 +398,23 @@ int main(int argc, char* argv[])
                 return 2;
             }
         }
-        return runBatch(raw.at(batchIdx + 1), engineKind, epKind);
+        int fps = InspectionSession::kDefaultFps;
+        const int fpsIdx = raw.indexOf(QStringLiteral("--fps"));
+        if (fpsIdx >= 0) {
+            if (fpsIdx + 1 >= raw.size()) {
+                QTextStream(stderr) << "用法: --fps 1..15\n";
+                return 2;
+            }
+            bool ok = false;
+            fps = raw.at(fpsIdx + 1).toInt(&ok);
+            if (!ok) {
+                QTextStream(stderr) << "无效 --fps\n";
+                return 2;
+            }
+        }
+        if (liveSmokeIdx >= 0)
+            return runLiveSmoke(raw.at(catIdx + 1), engineKind, epKind, fps);
+        return runBatch(raw.at(catIdx + 1), engineKind, epKind);
     }
 
     return runGui(argc, argv);

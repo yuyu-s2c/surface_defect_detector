@@ -104,14 +104,14 @@ ColumnLayout {
             text: "应用"
             primary: app.paramsDirty
             highlight: app.paramsDirty
-            enabled: !app.busy && app.currentCategory.length > 0
+            enabled: !app.busy && !app.liveRunning && app.currentCategory.length > 0
             onClicked: app.applyParams()
         }
         AppButton {
             Layout.fillWidth: true
             text: "恢复默认"
             outlined: true
-            enabled: !app.busy && app.currentCategory.length > 0
+            enabled: !app.busy && !app.liveRunning && app.currentCategory.length > 0
             onClicked: app.restoreParams()
         }
     }

@@ -4,6 +4,7 @@
 #include "ImageConvert.h"
 #include "OverlayColors.h"
 #include "ResultExporter.h"
+#include "sources/FolderSource.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -11,11 +12,14 @@
 #include <QVariantMap>
 #include <QtMath>
 
+#include <memory>
+
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
 MainViewModel::MainViewModel(QObject* parent)
     : QObject(parent)
+    , m_session(m_ctrl, this)
     , m_datasetModel(new DatasetTreeModel(this))
     , m_boxModel(new BoxListModel(this))
     , m_metricsModel(new MetricsListModel(this))
@@ -30,10 +34,24 @@ MainViewModel::MainViewModel(QObject* parent)
             this, &MainViewModel::onBusyChanged);
     connect(&m_ctrl, &DetectionController::currentDetectFinished,
             this, &MainViewModel::onDetectFinished);
+    connect(&m_ctrl, &DetectionController::enginePrepared,
+            this, &MainViewModel::onEnginePrepared);
     connect(&m_ctrl, &DetectionController::batchFinished,
             this, &MainViewModel::onBatchFinished);
     connect(&m_ctrl, &DetectionController::compareFinished,
             this, &MainViewModel::onCompareFinished);
+    connect(&m_session, &InspectionSession::frameInspected,
+            this, &MainViewModel::onLiveFrame);
+    connect(&m_session, &InspectionSession::finished,
+            this, &MainViewModel::onLiveFinished);
+    connect(&m_session, &InspectionSession::errorOccurred,
+            this, &MainViewModel::onLiveError);
+}
+
+MainViewModel::~MainViewModel()
+{
+    m_liveStarting = false;
+    m_session.stop();
 }
 
 QString MainViewModel::imageInfo() const
@@ -46,7 +64,12 @@ QString MainViewModel::imageInfo() const
 
 bool MainViewModel::canRunBatch() const
 {
-    return !m_busy && !m_currentCategory.isEmpty();
+    return !m_busy && !m_liveRunning && !m_liveStarting && !m_currentCategory.isEmpty();
+}
+
+bool MainViewModel::canStartLive() const
+{
+    return !m_busy && !m_liveRunning && !m_liveStarting && !m_currentCategory.isEmpty();
 }
 
 bool MainViewModel::canExportBatch() const
@@ -85,6 +108,7 @@ bool MainViewModel::loadDataset(const QUrl& folder)
 
 bool MainViewModel::loadDatasetPath(const QString& path)
 {
+    stopLive();
     if (!m_ctrl.loadDataset(path)) {
         raiseError(QStringLiteral("数据集加载失败：%1").arg(path));
         return false;
@@ -122,6 +146,8 @@ void MainViewModel::selectFromModelIndex(const QModelIndex& index)
 void MainViewModel::selectNode(const QString& nodeType, const QString& category,
                               const QString& defectType, const QString& imagePath)
 {
+    if (m_liveRunning || m_liveStarting)
+        return;
     if (category.isEmpty())
         return;
     const bool categoryChanged = (category != m_currentCategory);
@@ -173,6 +199,8 @@ void MainViewModel::loadCurrentImage()
 
 void MainViewModel::runDetectionForCurrent()
 {
+    if (m_liveRunning || m_liveStarting)
+        return;
     if (m_currentBgr.empty() || m_currentCategory.isEmpty())
         return;
     m_ctrl.prepareAndDetectAsync(m_currentCategory, m_currentBgr);
@@ -235,6 +263,8 @@ void MainViewModel::applyDetectionResult(const DetectionResult& result)
 
 void MainViewModel::setEngineKind(int kind)
 {
+    if (m_liveRunning || m_liveStarting)
+        return;
     kind = (kind == 1) ? 1 : 0;
     if (m_engineKind == kind)
         return;
@@ -452,7 +482,7 @@ void MainViewModel::syncParamsFromSettings()
 
 void MainViewModel::applyParams()
 {
-    if (m_currentCategory.isEmpty())
+    if (m_currentCategory.isEmpty() || m_liveRunning || m_liveStarting)
         return;
     if (currentKind() == EngineKind::DL) {
         m_ctrl.setDLParams(m_currentCategory, m_dl);
@@ -470,7 +500,7 @@ void MainViewModel::applyParams()
 
 void MainViewModel::restoreParams()
 {
-    if (m_currentCategory.isEmpty())
+    if (m_currentCategory.isEmpty() || m_liveRunning || m_liveStarting)
         return;
     m_syncingParams = true;
     if (currentKind() == EngineKind::DL) {
@@ -494,16 +524,146 @@ void MainViewModel::restoreParams()
 
 void MainViewModel::runBatch()
 {
-    if (m_currentCategory.isEmpty() || m_ctrl.isBusy())
+    if (m_currentCategory.isEmpty() || m_ctrl.isBusy() || m_liveRunning || m_liveStarting)
         return;
     m_ctrl.runBatchAsync(m_currentCategory);
 }
 
 void MainViewModel::compareEngines()
 {
-    if (m_currentCategory.isEmpty() || m_ctrl.isBusy())
+    if (m_currentCategory.isEmpty() || m_ctrl.isBusy() || m_liveRunning || m_liveStarting)
         return;
     m_ctrl.compareAsync(m_currentCategory);
+}
+
+void MainViewModel::setLiveTargetFps(int fps)
+{
+    fps = qBound(InspectionSession::kMinFps, fps, InspectionSession::kMaxFps);
+    if (m_liveTargetFps == fps)
+        return;
+    m_liveTargetFps = fps;
+    emit liveTargetFpsChanged();
+}
+
+void MainViewModel::setLiveRunning(bool running)
+{
+    if (m_liveRunning == running)
+        return;
+    m_liveRunning = running;
+    emit liveRunningChanged();
+    emit workEnabledChanged();
+}
+
+void MainViewModel::startLive()
+{
+    if (!canStartLive()) {
+        if (m_currentCategory.isEmpty())
+            raiseError(QStringLiteral("请先选择一个类别"));
+        return;
+    }
+    m_liveStarting = true;
+    emit workEnabledChanged();
+    m_ctrl.prepareEngineAsync(m_currentCategory);
+}
+
+void MainViewModel::stopLive()
+{
+    const bool was = m_liveRunning || m_liveStarting || m_session.isRunning();
+    m_liveStarting = false;
+    m_session.stop();
+    setLiveRunning(false);
+    emit workEnabledChanged();
+    if (was)
+        setStatusText(QStringLiteral("已停止取流"));
+}
+
+void MainViewModel::onEnginePrepared(bool ok, const QString& category)
+{
+    if (!m_liveStarting)
+        return;
+    m_liveStarting = false;
+    if (!ok) {
+        emit workEnabledChanged();
+        if (currentKind() == EngineKind::DL) {
+            const QString expected = m_ctrl.onnxModelCandidates(category).value(0);
+            raiseError(QStringLiteral("无法准备 %1 的 DL 引擎（ONNX 缺失或 train/good 不足 3 张；约定 %2）")
+                           .arg(category, expected));
+        } else {
+            raiseError(QStringLiteral("无法准备 %1 的传统引擎（train/good 为空或不可读）")
+                           .arg(category));
+        }
+        return;
+    }
+    auto src = std::make_unique<FolderSource>();
+    src->setFromDataset(m_ctrl.dataset(), category);
+    src->setFps(m_liveTargetFps);
+    if (!m_session.start(std::move(src), category)) {
+        emit workEnabledChanged();
+        raiseError(QStringLiteral("无法开始取流（该类别没有测试图）"));
+        return;
+    }
+    m_liveLatencyMs = 0;
+    m_liveQueueDepth = 0;
+    m_liveActualFps = 0.0;
+    emit liveStatsChanged();
+    setLiveRunning(true);
+    setStatusText(QStringLiteral("取流中 %1 @ %2 fps…").arg(category).arg(m_liveTargetFps));
+}
+
+void MainViewModel::onLiveFrame(const LiveInspectedFrame& frame)
+{
+    m_currentCategory = frame.category;
+    m_currentDefectType = frame.defectType;
+    m_currentImagePath = frame.path;
+    m_currentBgr = frame.bgr;
+    m_sourceImage = bgrToQImage(m_currentBgr);
+
+    m_currentGt.release();
+    m_gtOverlayImage = {};
+    const QString gtPath = m_ctrl.dataset().groundTruthMask(
+        m_currentCategory, m_currentDefectType, m_currentImagePath);
+    if (!gtPath.isEmpty()) {
+        cv::Mat gt = cv::imread(gtPath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
+        if (!gt.empty() && !m_currentBgr.empty() && gt.size() != m_currentBgr.size())
+            cv::resize(gt, gt, m_currentBgr.size(), 0, 0, cv::INTER_NEAREST);
+        m_currentGt = gt;
+        m_gtOverlayImage = maskToOverlayImage(gt, OverlayColors::gtRed, OverlayColors::gtAlpha);
+    }
+
+    applyDetectionResult(frame.result);
+    emit imageChanged();
+    emit selectionChanged();
+
+    m_liveLatencyMs = int(frame.latencyMs);
+    m_liveQueueDepth = frame.queueDepth;
+    m_liveActualFps = frame.actualFps;
+    emit liveStatsChanged();
+
+    const QString verdict = frame.result.detected() ? QStringLiteral("NG") : QStringLiteral("OK");
+    setStatusText(QStringLiteral("取流 %1 fps | 延迟 %2 ms | 队列 %3/%4 | %5 | %6/%7/%8（%9/%10）")
+                      .arg(frame.actualFps, 0, 'f', 1)
+                      .arg(frame.latencyMs)
+                      .arg(frame.queueDepth)
+                      .arg(frame.queueMax)
+                      .arg(verdict)
+                      .arg(frame.category, frame.defectType, QFileInfo(frame.path).fileName())
+                      .arg(frame.done)
+                      .arg(frame.total));
+}
+
+void MainViewModel::onLiveFinished(int total, int ngCount)
+{
+    m_liveStarting = false;
+    setLiveRunning(false);
+    setStatusText(QStringLiteral("取流结束：%1 张，NG %2").arg(total).arg(ngCount));
+}
+
+void MainViewModel::onLiveError(const QString& msg)
+{
+    m_liveStarting = false;
+    m_session.stop();
+    setLiveRunning(false);
+    raiseError(msg);
 }
 
 QUrl MainViewModel::suggestedExportFileUrl() const

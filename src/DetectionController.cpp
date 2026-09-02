@@ -362,6 +362,30 @@ const BatchMetrics* DetectionController::lastBatch(EngineKind kind, const QStrin
     return &it.value();
 }
 
+void DetectionController::prepareEngineAsync(const QString& category)
+{
+    QMutexLocker lock(&m_mutex);
+    if (m_busy)
+        return;
+    m_busy = true;
+    lock.unlock();
+    emit busyChanged(true);
+    emit progressChanged(0, 0, QStringLiteral("准备取流引擎…"));
+    startJob([this, category]() {
+        const bool ok = !m_abort.load() && prepareEngine(category);
+        if (m_abort.load())
+            return;
+        QPointer<DetectionController> self(this);
+        QMetaObject::invokeMethod(this, [self, ok, category]() {
+            if (!self)
+                return;
+            // 先清 busy，再通知取流启动，避免 finishJobOnGui 把 pending 单张检和 live detect 叠上
+            self->finishJobOnGui();
+            emit self->enginePrepared(ok, category);
+        }, Qt::QueuedConnection);
+    });
+}
+
 void DetectionController::prepareAndDetectAsync(const QString& category, const cv::Mat& image)
 {
     const cv::Mat clone = image.clone();

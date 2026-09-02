@@ -5,6 +5,8 @@ import QtQml.Models
 Rectangle {
     id: root
     color: Theme.bgPanel
+    enabled: !app.liveRunning
+    opacity: enabled ? 1 : 0.55
 
     Column {
         anchors.fill: parent

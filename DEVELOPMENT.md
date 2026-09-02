@@ -37,6 +37,7 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
 ./build/surface_defect_detector.exe --batch metal_nut --engine dl
 ./build/surface_defect_detector.exe --batch screw --engine dl
 ./build/surface_defect_detector.exe --batch metal_nut --engine dl --provider cpu   # 强制 CPU
+./build/surface_defect_detector.exe --live-smoke metal_nut --engine dl --fps 5     # 取流冒烟（无窗）
 ```
 
 注意：Ninja 不在 PATH，配置时必须显式传 `CMAKE_MAKE_PROGRAM`。
@@ -52,10 +53,12 @@ surface_defect_detector/
 ├── CMakeLists.txt
 ├── qml/                      # View：暗色质检台（顶栏 / 左树 / 中画布 / 右 Tab）
 ├── src/
-│   ├── main.cpp                # 入口；--batch 走 QCoreApplication，GUI 走 QGuiApplication
+│   ├── main.cpp                # 入口；--batch / --live-smoke 走 QCoreApplication，GUI 走 QGuiApplication
 │   ├── viewmodels/             # ViewModel：MainViewModel + 树/框/指标/对比模型
 │   ├── items/InspectionCanvas  # QQuickPaintedItem 看图：缩放平移，GT/检测叠加
 │   ├── DetectionController.h/.cpp # 应用服务层：数据集 + 引擎缓存 + 批量编排（GUI/CLI 共用）
+│   ├── InspectionSession.h/.cpp   # 模拟取流：有界队列 + 取流/检测双线程
+│   ├── sources/                # IFrameSource / FolderSource / CameraSource（空）/ LogRejectSink
 │   ├── IDetectionEngine.h      # 检测引擎抽象接口 + DetectionResult 输出契约
 │   ├── DetectionEngine.h/.cpp  # 传统 CV 检测引擎（v0.1 基线，IDetectionEngine 实现）
 │   ├── DLDetectionEngine.h/.cpp # EfficientAD ONNX（P2；3.6 DirectML + 图像级分数过线）
@@ -73,10 +76,11 @@ surface_defect_detector/
 └── build/                    # 构建产物（gitignore）
 ```
 
-分层：`QML View → MainViewModel → DetectionController → IDetectionEngine`。
+分层：`QML View → MainViewModel → DetectionController / InspectionSession → IDetectionEngine`。
 `DatasetManager` / `ResultEvaluator` 为无 UI 依赖的领域服务，由 Controller 使用。
 QML 不接触 `cv::Mat` 与引擎实例。GUI 的引擎加载 / 标定 / 单张推理 / 批量走
 DetectionController 工作线程，进度在画布蒙层与底栏；`--batch` 仍同步，口径不变。
+模拟取流走 `InspectionSession`（有界队列 + 同步 `detect()`），不走 `*Async`（忙碌会丢帧）。
 
 ### 关键接口契约（迭代时保持兼容）
 
@@ -190,7 +194,7 @@ Widgets `MainWindow` / `ImageViewWidget` 已删除。GUI 改为 Qt Quick：自�
 左栏数据集用官方 `TreeView` + `TreeViewDelegate`，选中走 `ItemSelectionModel`（不要手搓
 点击与缩进）。看图是项目特有叠加，用 `InspectionCanvas`（QQuickPaintedItem）。
 
-### Phase 3.6 部署闭环（无硬件）— 进行中
+### Phase 3.6 部署闭环（无硬件）— ✅ 已完成
 
 P4 相机/PLC 暂不做：没有实机，接 SDK 只能写成空壳。也不再训 EfficientAD-S、不再重做 GUI。
 网络排序已到小模型上限（图像 AUROC 0.97+）；界面刚在 3.5 收口。本阶段把现有离线 demo
@@ -300,19 +304,35 @@ train/good + 各 1 张 test/good、test/scratch 及 mask，onnx 硬链到约定�
 分数口径 108/115、F1 0.269；screw DL 125/160、F1 0.478（阈值仍是 k=1 的 0.714，
 没有掉到通用 k=3）。
 
-#### 工作项 4：模拟取流（1～3 之后，可选收口）
+#### 工作项 4：模拟取流 ✅
 
-薄接口，不接假 SDK：
+薄接口，不接假 SDK。真相机来了只换 Source：
 
 ```
 IFrameSource
-  ├── FolderSource   # 按设定 FPS 吐 test/ 图（本阶段）
-  └── CameraSource   # P4 填海康，本阶段只留空实现或编译开关
+  ├── FolderSource   # 按设定 FPS 吐当前类别 test/（含 good），顺序与 runBatch 一致
+  └── CameraSource   # P4 填海康；本阶段 start() 失败「未接相机」，不接假 SDK
+InspectionSession    # 有界队列 8 + 取流/检测双线程；NG → LogRejectSink（[DO] REJECT）
 ```
 
-画布叠延迟 / 队列深度 / OK·NG；剔除信号先打日志（或虚拟 DO）。真相机来了只换 Source。
+队列满时 Folder **阻塞取帧**（不丢图）；P4 相机应丢最旧帧（写在接口注释，本阶段 stub 不实现）。
+Live 走同步 `detect()`，不走 `prepareAndDetectAsync`（忙碌会丢帧）。GUI 开始前 `prepareEngineAsync`，
+取流中不盖 BusyOverlay。顶栏「开始/停止取流」+ FPS 1–15（默认 5）；画布 LiveHud 延迟/队列/fps，
+徽章改为合格/不合格；底栏 `取流 x fps | 延迟 | 队列 | OK·NG | 路径`。停源后树可再选。
 
-验收：文件夹源能连续跑完一类 test、底栏有帧率与判定；停源后 GUI 回到离线选图，不泄漏线程。
+无头冒烟（开发用，不是产品开关）：`--live-smoke <类> [--engine dl] [--fps N]`。
+
+实测（2026-09-02，metal_nut，DL DirectML，引擎已标定）：
+
+| 目标 FPS | 墙钟 | 有效 fps | 末帧实际 fps | 最大队列 | 最大延迟 | 跑完 |
+|---|---|---|---|---|---|---|
+| 5 | 25.2 s | 4.57 | 4.5 | 0 | 227 ms（首帧） | **115/115** |
+| 15 | 9.7 s | 11.86 | 11.1 | 5 | 509 ms（首帧） | **115/115** |
+
+5 fps 时检测跟得上，队列保持 0，延迟稳态 ~90 ms。15 fps 超过 DML 吞吐，队列涨到 5 后仍不丢帧。
+NG 90 张 = 分数过线张数（88 TP + 2 good FP，与图像级 108/115 一致）。进程退出码 0，`stop()` 等两线程。
+
+回归未漂：`--batch metal_nut` 图像级 58/115、F1 0.2926；`--batch metal_nut --engine dl` 分数口径 108/115、F1 0.269。
 
 ### Phase 4 产线对接（远期，等实机）
 

@@ -103,6 +103,8 @@ public:
 
     // GUI：后台准备引擎并检测当前图。忙碌时只保留最新一次请求。
     void prepareAndDetectAsync(const QString& category, const cv::Mat& image);
+    // GUI：只构建引擎（取流开始前标定）。忙碌时忽略。
+    void prepareEngineAsync(const QString& category);
     void runBatchAsync(const QString& category);
     void compareAsync(const QString& category);
 
@@ -116,6 +118,7 @@ signals:
     void progressChanged(int current, int total, const QString& text);
     void busyChanged(bool busy);
     void currentDetectFinished(bool ok, const DetectionResult& result);
+    void enginePrepared(bool ok, const QString& category);
     void batchFinished(bool ok, const QString& category);
     void compareFinished(bool ok, const QString& category);
 

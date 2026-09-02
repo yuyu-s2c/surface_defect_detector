@@ -37,7 +37,7 @@ Rectangle {
 
         EngineSwitch {
             engineKind: app.engineKind
-            enabled: !app.busy
+            enabled: !app.busy && !app.liveRunning
             opacity: enabled ? 1 : 0.5
             onPicked: (k) => app.engineKind = k
         }
@@ -72,11 +72,37 @@ Rectangle {
             onClicked: root.compareClicked()
         }
 
+        Row {
+            spacing: 6
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "FPS"
+                color: Theme.textSecondary
+                font.pixelSize: Theme.smallSize
+                font.family: Theme.fontFamily
+            }
+            AppSpinBox {
+                from: 1
+                to: 15
+                value: app.liveTargetFps
+                enabled: !app.liveRunning && !app.busy
+                implicitWidth: 86
+                onValueModified: app.liveTargetFps = value
+            }
+            AppButton {
+                text: app.liveRunning ? "停止取流" : "开始取流"
+                primary: !app.liveRunning
+                highlight: app.liveRunning
+                enabled: app.liveRunning || app.canStartLive
+                onClicked: app.liveRunning ? app.stopLive() : app.startLive()
+            }
+        }
+
         AppButton {
             id: exportBtn
             text: "导出"
             outlined: true
-            enabled: !app.busy && (app.hasImage || app.canExportBatch)
+            enabled: !app.busy && !app.liveRunning && (app.hasImage || app.canExportBatch)
             onClicked: exportMenu.open()
         }
     }
