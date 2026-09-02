@@ -5,15 +5,19 @@ Desktop tool for industrial surface defect detection (Qt6 Quick / QML + OpenCV +
 Status, architecture, build commands and measured metrics: [DEVELOPMENT.md](DEVELOPMENT.md).
 Agent conventions: [AGENTS.md](AGENTS.md). Training: [tools/training/TRAIN.md](tools/training/TRAIN.md).
 
-Phases 1–3.5 are done (CV baseline / EfficientAD / engineering / QML MVVM). Phase 4 (camera/PLC) is later.
+Phases 1–3.5 are done (CV baseline / EfficientAD / engineering / QML MVVM).
+Phase 3.6 work item 1 (DirectML GPU inference) is done. Next: image-level score and new-category onboarding.
+Phase 4 (camera/PLC) waits on hardware.
 
 ```bash
 ./build/surface_defect_detector.exe
 ./build/surface_defect_detector.exe --batch metal_nut
 ./build/surface_defect_detector.exe --batch metal_nut --engine dl
+./build/surface_defect_detector.exe --batch metal_nut --engine dl --provider cpu
 ```
 
-GUI overlay: red = ground-truth mask, green = detection. Switching to DL calibrates on `train/good` once (about 1–2 minutes; that is not training) and writes `<model>.calib.json` next to the ONNX file; later launches reuse it until the model or good-image set changes.
+GUI overlay: red = ground-truth mask, green = detection. DL defaults to DirectML (CPU fallback).
+Switching to DL calibrates on `train/good` once per execution provider (DirectML is tens of seconds; that is not training) and writes `<model>.calib.json` next to the ONNX file.
 
 1.  xxxx
 2.  xxxx

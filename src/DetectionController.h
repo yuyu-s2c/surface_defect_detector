@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DatasetManager.h"
+#include "DLDetectionEngine.h"
 #include "EngineParams.h"
 #include "IDetectionEngine.h"
 #include "ResultEvaluator.h"
@@ -61,6 +62,12 @@ public:
     // 两类引擎分缓存，切换不清实例，避免 GUI 来回切 / 双引擎对比时重复加载 ONNX。
     void setEngineKind(EngineKind kind);
     EngineKind engineKind() const;
+
+    // ONNX EP（仅 DL）。改 EP 会丢掉已缓存的 DL 会话与该引擎批量结果。
+    void setOrtEpKind(OrtEpKind kind);
+    OrtEpKind ortEpKind() const;
+    // 该类 DL 引擎实际用上的 EP 文案；尚未构建则空串
+    QString dlProviderLabel(const QString& category) const;
 
     // 按类别覆盖可调参数；已缓存的该引擎实例当场改字段（DL 改 k 不重建会话）。
     // CLI 不调用，保持代码内 P2 工作点。
@@ -133,6 +140,7 @@ private:
     QMap<QString, BatchMetrics> m_lastCv;
     QMap<QString, BatchMetrics> m_lastDl;
     EngineKind m_engineKind = EngineKind::Traditional;
+    OrtEpKind m_ortEpKind = OrtEpKind::Auto;
 
     mutable QMutex m_mutex;
     QThreadPool m_pool;

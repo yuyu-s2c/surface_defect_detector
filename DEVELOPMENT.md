@@ -36,10 +36,14 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
 ./build/surface_defect_detector.exe --batch screw
 ./build/surface_defect_detector.exe --batch metal_nut --engine dl
 ./build/surface_defect_detector.exe --batch screw --engine dl
+./build/surface_defect_detector.exe --batch metal_nut --engine dl --provider cpu   # 强制 CPU
 ```
 
 注意：Ninja 不在 PATH，配置时必须显式传 `CMAKE_MAKE_PROGRAM`。
-构建后 OpenCV dll 自动复制到 exe 旁；Qt dll 已用 windeployqt 部署。
+构建后 OpenCV / ONNX Runtime / DirectML dll 复制到 exe 旁；Qt dll 已用 windeployqt 部署。
+缺 DirectML 包时：`powershell -ExecutionPolicy Bypass -File tools/fetch_onnxruntime_dml.ps1`
+（C++ 推理用 Microsoft.ML.OnnxRuntime.DirectML **1.24.4**，这是目前最新的 DML 原生包，没有 1.29 的 DML zip；
+Python 训练仍锁 onnxruntime==1.29.0。）
 
 ## 3. 架构与目录
 
@@ -54,15 +58,17 @@ surface_defect_detector/
 │   ├── DetectionController.h/.cpp # 应用服务层：数据集 + 引擎缓存 + 批量编排（GUI/CLI 共用）
 │   ├── IDetectionEngine.h      # 检测引擎抽象接口 + DetectionResult 输出契约
 │   ├── DetectionEngine.h/.cpp  # 传统 CV 检测引擎（v0.1 基线，IDetectionEngine 实现）
-│   ├── DLDetectionEngine.h/.cpp # EfficientAD ONNX 推理（Phase 2）
+│   ├── DLDetectionEngine.h/.cpp # EfficientAD ONNX 推理（Phase 2；3.6 DirectML / CPU 回退）
 │   ├── EngineParams.h          # 传统/DL 可调参数默认值（P2 工作点）
 │   ├── OverlayColors.h         # GT 红 / 检测绿（画布与导出共用）
 │   ├── ResultExporter.h/.cpp   # 标注图 + CSV 导出（Phase 3）
 │   ├── DatasetManager.h/.cpp   # 数据集加载：类别→缺陷类型→图片，配对 GT 掩码
 │   └── ResultEvaluator.h/.cpp  # 像素级 P/R/F1/IoU + 图像级检出评估
 ├── tools/training/           # Python 训练侧（anomalib / EfficientAD）
+├── tools/fetch_onnxruntime_dml.ps1  # 拉 DirectML ORT + DirectML.dll 到 third_party/
 ├── models/                   # ONNX / ckpt（gitignore，不入库）
 ├── third_party/opencv/       # OpenCV 预编译包（gitignore）
+├── third_party/onnxruntime/  # DirectML ORT 1.24.4（gitignore）
 ├── metal_nut/  screw/        # MVTec AD 数据集（顶层 train/test/ground_truth）
 └── build/                    # 构建产物（gitignore）
 ```
@@ -78,7 +84,8 @@ DetectionController 工作线程，进度在画布蒙层与底栏；`--batch` �
 
 - `cv::Mat defectMask`：8UC1，0/255 缺陷掩码
 - `std::vector<cv::Rect> boxes` / `std::vector<double> areas`：缺陷框与面积
-- `bool detected()`：图像级检出判定（`totalArea >= minImageArea`；DL/传统由引擎写入面积门）
+- `bool detected()`：图像级检出判定（P3.5 及以前：`totalArea >= minImageArea`，面积门由引擎写入。
+  Phase 3.6 改为图像级分数过线，面积门只影响掩码/框；改此字段须同步四处，见第 4 节 3.6）
 
 后续深度学习引擎只要实现该接口产出同一结构，ViewModel、编排、评估器、批处理模式均无需改动。
 
@@ -156,7 +163,8 @@ screw，160 张（v0.1 因无配准基本无效）：
 缺陷检出 80/119（67%）。`thread_side` / `manipulated_front` 为已知短板；k 与面积门已扫过，再拧收益有限。
 网络排序（AUROC）已接近 EfficientAD 小模型上限，C++ 硬判决与 anomalib 的 0.95 图像 F1 仍有缝。
 
-推理目前 CPU ONNX，整批约十几分钟。不继续在同一小模型上堆 step。
+推理在 Phase 3.6 改为默认 DirectML（见第 4 节工作项 1）；P2 收口时仍是 CPU ONNX、整批约十几分钟。
+不继续在同一小模型上堆 step。
 
 ### Phase 3 ✅ 工程化（已完成）
 
@@ -168,7 +176,7 @@ screw DL 120/160、F1 0.4782。
 - **导出**：当前图 PNG；批量 `images/<defect>/*.png` + `per_image.csv` + `summary.csv`（需先跑过该引擎该类别批量）。
 - **对比**：同一类别 CV vs DL 的 P/R/F1/图像级 + ΔF1；缺哪侧批量补跑哪侧。两类引擎分缓存。
 - **叠加**：红 = GT 标注（`ground_truth/`），绿 = 当前引擎检出；`good` 无红。
-- **GUI 线程**：加载 / 标定 / 单张 / 批量在工作线程，底部状态栏进度条。切 DL 时若模型旁没有有效 `.calib.json`，才对全部 `train/good` 跑 ONNX 标定阈值（metal_nut 220 张、screw 320 张，约 1～2 分钟，不是训练），结果写到 `models/<类>/weights/onnx/<类>.calib.json`；模型或良品图指纹未变则下次启动跳过该循环。同进程再切走内存缓存。`--batch` 仍同步，共用该文件缓存。
+- **GUI 线程**：加载 / 标定 / 单张 / 批量在工作线程，底部状态栏进度条。切 DL 时若模型旁没有有效 `.calib.json`（v2 还键 EP），才对全部 `train/good` 跑 ONNX 标定阈值（metal_nut 220 张；DML 约十几秒，CPU 仍要数分钟，不是训练），结果写到 `models/<类>/weights/onnx/<类>.calib.json`；模型、良品图指纹与 EP 未变则下次启动跳过该循环。同进程再切走内存缓存。`--batch` 仍同步，共用该文件缓存。
 
 ### Phase 3.5 ✅ QML + MVVM 界面重做
 
@@ -180,10 +188,92 @@ Widgets `MainWindow` / `ImageViewWidget` 已删除。GUI 改为 Qt Quick：自�
 左栏数据集用官方 `TreeView` + `TreeViewDelegate`，选中走 `ItemSelectionModel`（不要手搓
 点击与缩进）。看图是项目特有叠加，用 `InspectionCanvas`（QQuickPaintedItem）。
 
-### Phase 4 产线对接（远期）
+### Phase 3.6 部署闭环（无硬件）— 进行中
 
-- 接海康 MVS / MVD 相机 SDK 实时取流检测（本机已装运行时）
-- 与 PLC/剔除机构联动的接口预留
+P4 相机/PLC 暂不做：没有实机，接 SDK 只能写成空壳。也不再训 EfficientAD-S、不再重做 GUI。
+网络排序已到小模型上限（图像 AUROC 0.97+）；界面刚在 3.5 收口。本阶段把现有离线 demo
+收成可独立用、以后能直接挂相机的质检工作站。
+
+**不做**（写进规划以免回潮）：
+
+- 再训 EfficientAD-S / 加 step / 换更大模型或更高分辨率（4GB 显存，P2 已判定不改网络）
+- 假海康 SDK / 假 PLC 报文（没有设备，协议层测不了）
+- 再重做 GUI
+- 传统 CV 给 screw 做配准（DL 已覆盖旋转，别回到 P1 短板）
+- 为刷表再训 hazelnut / bottle 等类（新类别只用来验证「零改代码接入」，见工作项 3）
+
+实施顺序：1 → 2 → 3；模拟取流放在 1、2 之后，没有 GPU 和图像级分数它只是幻灯片。
+
+#### 工作项 1：GPU 推理 ✅
+
+C++ 推理默认 DirectML（独显），失败回 CPU。`--provider auto|cpu|dml`（默认 auto；`dml` 失败不静默回退）。
+标定缓存 `.calib.json` v2 含 `provider`，cpu/dml 阈值不混用。
+
+包：`Microsoft.ML.OnnxRuntime.DirectML` 1.24.4 + `Microsoft.AI.DirectML` 1.15.4
+（NuGet 无 1.29 DML 包；不 include `dml_provider_factory.h`，走 `GetExecutionProviderApi("DML")`，避免 MinGW 缺 DirectML.h）。
+笔记本用 DXGI 选最大专用显存适配器（本机 device_id=1，3050 Ti，不是核显）。ORT 会把 shape 类算子留在 CPU，属预期警告。
+
+实测（2026-09-02，metal_nut，含 220 张标定 + 115 张 test，P2 工作点）：
+
+| | 墙钟 | 图像级 | 像素 F1 | good 误报 |
+|---|---|---|---|---|
+| DML（RTX 3050 Ti Laptop, 3962 MB） | **13.3 s** | 106/115（0.9217） | 0.2703 | 1/22（4.5%） |
+| CPU（`--provider cpu`） | 580.4 s | 106/115（0.9217） | 0.2703 | 1/22（4.5%） |
+
+两边指标与 P2 表一致，未因 EP 浮点差跳档。DML 约 44×。
+
+#### 工作项 2：图像级 OK/NG 与面积门解耦
+
+产线剔除看「这张图有没有问题」，不是掩码贴得多齐。现状 `detected()` = 形态学后
+`totalArea >= 面积门`，和像素叠加绑在一起。screw 的缝在这里：anomalib 图像 F1 0.95，
+C++ 0.75；k 与面积门已扫过，再拧到不了 90%。
+
+契约：`DetectionResult` 增加图像级分数与判定阈值；`detected()` 改为分数过线。
+像素掩码 / 框仍走现有热图→阈值→形态学→连通域，只给绿叠加。改契约须同步
+DetectionController、ResultEvaluator、main.cpp 批处理、MainViewModel 四处。
+
+P2/P3 表仍是面积门口径的基线，不动。本项收口后单列「分数口径」图像级表，
+`--batch` 默认打新口径，并保留面积门列便于对照。
+
+| 验收 | 标准 |
+|---|---|
+| screw 图像级 | 从 0.75 往 **≥0.90** 靠（分数口径） |
+| good 误报 | 仍 **≤10%**（screw 现 2.4%，metal_nut 现 4.5%） |
+| metal_nut 图像级 | 不回落到 0.90 以下（现 0.92） |
+| 像素 F1 | **不作为本项成功标准**（`thread_side` 等细缺陷，256 EfficientAD-S 掩码贴不紧是模型上限） |
+
+#### 工作项 3：新类别零改代码接入
+
+`DatasetManager` 已按 MVTec 布局扫目录，没有写死两类。写死的是 `EngineParams` 里
+screw 的 k/面积门，以及模型路径约定 `models/<类>/weights/onnx/<类>.onnx`。
+
+加一类应为：放入 `train/good` + `test/` 目录 → 指出 ONNX（或先只用传统引擎）→
+标定 → 出指标。不改 C++ 默认值、不改 QML。新类没有专表工作点时，用类别无关的
+默认参数 + 图像级分数标定，而不是继续堆 `if (category == "screw")`。
+
+验收：第三类（可以是临时拷贝的 MVTec 布局目录，不必入库、不必刷 AUROC）能被树扫到、
+能切 DL、能 `--batch` 跑完不崩溃。metal_nut / screw 路径与指标不受影响。
+
+#### 工作项 4：模拟取流（1、2 之后，可选收口）
+
+薄接口，不接假 SDK：
+
+```
+IFrameSource
+  ├── FolderSource   # 按设定 FPS 吐 test/ 图（本阶段）
+  └── CameraSource   # P4 填海康，本阶段只留空实现或编译开关
+```
+
+画布叠延迟 / 队列深度 / OK·NG；剔除信号先打日志（或虚拟 DO）。真相机来了只换 Source。
+
+验收：文件夹源能连续跑完一类 test、底栏有帧率与判定；停源后 GUI 回到离线选图，不泄漏线程。
+
+### Phase 4 产线对接（远期，等实机）
+
+依赖 3.6 的 DirectML、图像级分数、`IFrameSource`。到货后再填，不在本阶段预写协议：
+
+- `CameraSource`：海康 MVS / MVD 实时取流（本机已装运行时）
+- 与 PLC / 剔除机构联动（实 DO，替换 3.6 的日志输出）
 
 ## 5. 工程规范
 

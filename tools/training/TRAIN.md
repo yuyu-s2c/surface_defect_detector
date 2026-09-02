@@ -38,8 +38,11 @@ cd /d/C++/QtProject/surface_defect_detector && PYTHONUNBUFFERED=1 tools/training
 
 ## 训完后的 C++ 批处理
 
+默认 DirectML（失败回 CPU）。C++ ORT 是 DirectML 1.24.4，缺包时先跑 `tools/fetch_onnxruntime_dml.ps1`。
+
 ```powershell
 .\build\surface_defect_detector.exe --batch screw --engine dl
+.\build\surface_defect_detector.exe --batch screw --engine dl --provider cpu
 ```
 
 screw 的 DL：阈值 `均值+1.0σ`，图像级面积门 300（metal_nut 仍是 3σ / 1000）。改后必须重新编译再跑批处理。

@@ -15,7 +15,8 @@ find_package(Qt6 REQUIRED COMPONENTS Quick QuickControls2 Qml Gui)
 # OpenCV-MinGW-Build 预编译包，OpenCVConfig.cmake 位于 x64/mingw/lib
 find_package(OpenCV REQUIRED PATHS "${CMAKE_SOURCE_DIR}/third_party/opencv/x64/mingw/lib")
 
-# ONNX Runtime（Phase 2 DL 推理）：官方 MSVC 构建，C ABI 与 MinGW 兼容。
+# ONNX Runtime DirectML 包（Phase 3.6）：MSVC 构建的 C ABI，MinGW 可链 dll。
+# 缺包时：powershell -File tools/fetch_onnxruntime_dml.ps1
 set(ONNXRUNTIME_DIR "${CMAKE_SOURCE_DIR}/third_party/onnxruntime")
 
 qt_standard_project_setup(REQUIRES 6.5)
@@ -102,6 +103,7 @@ target_link_libraries(surface_defect_detector PRIVATE
     opencv_imgproc
     opencv_imgcodecs
     "${ONNXRUNTIME_DIR}/lib/onnxruntime.dll"
+    dxgi
 )
 
 if(WIN32)
@@ -120,6 +122,13 @@ if(WIN32)
             "${ONNXRUNTIME_DIR}/lib/onnxruntime_providers_shared.dll"
             $<TARGET_FILE_DIR:surface_defect_detector>
     )
+    if(EXISTS "${ONNXRUNTIME_DIR}/lib/DirectML.dll")
+        add_custom_command(TARGET surface_defect_detector POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${ONNXRUNTIME_DIR}/lib/DirectML.dll"
+                $<TARGET_FILE_DIR:surface_defect_detector>
+        )
+    endif()
 
     # QML 插件：Quick / Controls / Dialogs。路径按本机 Qt 安装。
     find_program(WINDEPLOYQT_EXECUTABLE windeployqt

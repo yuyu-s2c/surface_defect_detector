@@ -14,6 +14,9 @@
 #include <QJsonObject>
 #include <QtDebug>
 
+#include <windows.h>
+#include <dxgi.h>
+
 #include <cstring>
 #include <vector>
 
@@ -25,8 +28,59 @@ Ort::Env& ortEnv()
     return env;
 }
 
-// 缓存格式版本：统计方式变了就升，强制重跑 train/good
-constexpr int kCalibCacheVersion = 1;
+// 缓存格式版本：统计方式或键变了就升，强制重跑 train/good。
+// v2：加入 provider（cpu/dml），CPU 与 DML 热图数值不可混用同一阈值。
+constexpr int kCalibCacheVersion = 2;
+
+struct DmlAdapter {
+    int deviceId = 0;
+    QString name;
+    quint64 vramBytes = 0;
+};
+
+// 笔记本双显卡：device_id 0 经常是核显。按 DXGI 枚举下标选独显（最大专用显存）。
+DmlAdapter pickDmlAdapter()
+{
+    DmlAdapter best;
+    IDXGIFactory1* factory = nullptr;
+    if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory)))
+        || !factory) {
+        qWarning() << "DXGI 工厂创建失败，DirectML 用 device_id=0";
+        return best;
+    }
+    IDXGIAdapter1* adapter = nullptr;
+    for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
+        DXGI_ADAPTER_DESC1 desc{};
+        adapter->GetDesc1(&desc);
+        adapter->Release();
+        adapter = nullptr;
+        if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)
+            continue;
+        const QString name = QString::fromWCharArray(desc.Description);
+        if (name.contains(QStringLiteral("Microsoft Basic Render"), Qt::CaseInsensitive))
+            continue;
+        if (desc.DedicatedVideoMemory >= best.vramBytes) {
+            best.vramBytes = desc.DedicatedVideoMemory;
+            best.deviceId = static_cast<int>(i);
+            best.name = name;
+        }
+    }
+    factory->Release();
+    if (best.name.isEmpty())
+        qWarning() << "未找到独立 GPU 适配器，DirectML 用 device_id=0";
+    else
+        qInfo() << "DirectML 适配器:" << best.name
+                << "device_id=" << best.deviceId
+                << "VRAM_MB=" << (best.vramBytes / (1024 * 1024));
+    return best;
+}
+
+// 不 include dml_provider_factory.h（会拉 DirectML.h / d3d12.h，MinGW 没有那套 SDK 头）。
+// 只取 OrtDmlApi 第一个函数，与官方结构体前缀布局一致。
+struct OrtDmlApiHead {
+    OrtStatus*(ORT_API_CALL* SessionOptionsAppendExecutionProvider_DML)(
+        OrtSessionOptions* options, int device_id);
+};
 
 QString calibCachePath(const QString& modelPath)
 {
@@ -54,7 +108,7 @@ QString fingerprintGoodImages(const QStringList& paths)
 
 bool tryLoadCalibCache(const QString& path, qint64 modelSize, qint64 modelMtimeMs,
                        int inputSize, int goodCount, const QString& goodFp,
-                       double& mean, double& stddev)
+                       const QString& provider, double& mean, double& stddev)
 {
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly))
@@ -78,6 +132,8 @@ bool tryLoadCalibCache(const QString& path, qint64 modelSize, qint64 modelMtimeM
         return false;
     if (obj.value(QStringLiteral("goodFingerprint")).toString() != goodFp)
         return false;
+    if (obj.value(QStringLiteral("provider")).toString() != provider)
+        return false;
     if (!obj.contains(QStringLiteral("calibMean")) || !obj.contains(QStringLiteral("calibStd")))
         return false;
     mean = obj.value(QStringLiteral("calibMean")).toDouble();
@@ -87,7 +143,7 @@ bool tryLoadCalibCache(const QString& path, qint64 modelSize, qint64 modelMtimeM
 
 void saveCalibCache(const QString& path, qint64 modelSize, qint64 modelMtimeMs,
                     int inputSize, int goodCount, const QString& goodFp,
-                    double mean, double stddev)
+                    const QString& provider, double mean, double stddev)
 {
     QJsonObject obj;
     obj.insert(QStringLiteral("version"), kCalibCacheVersion);
@@ -96,6 +152,7 @@ void saveCalibCache(const QString& path, qint64 modelSize, qint64 modelMtimeMs,
     obj.insert(QStringLiteral("modelMtimeMs"), modelMtimeMs);
     obj.insert(QStringLiteral("goodCount"), goodCount);
     obj.insert(QStringLiteral("goodFingerprint"), goodFp);
+    obj.insert(QStringLiteral("provider"), provider);
     obj.insert(QStringLiteral("calibMean"), mean);
     obj.insert(QStringLiteral("calibStd"), stddev);
 
@@ -108,8 +165,9 @@ void saveCalibCache(const QString& path, qint64 modelSize, qint64 modelMtimeMs,
 }
 } // namespace
 
-DLDetectionEngine::DLDetectionEngine(const QString& modelPath)
+DLDetectionEngine::DLDetectionEngine(const QString& modelPath, OrtEpKind epKind)
     : m_modelPath(modelPath)
+    , m_epKind(epKind)
 {
 }
 
@@ -136,16 +194,30 @@ bool DLDetectionEngine::buildReference(const QStringList& goodImagePaths)
         return false;
     }
 
+    const bool wantDml = (m_epKind != OrtEpKind::Cpu);
+    const bool requireDml = (m_epKind == OrtEpKind::Dml);
     try {
-        Ort::SessionOptions opts;
-        opts.SetIntraOpNumThreads(4);
-        opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-        // Windows 下 ORTCHAR_T 为 wchar_t
-        m_session = std::make_unique<Ort::Session>(
-            ortEnv(), m_modelPath.toStdWString().c_str(), opts);
+        if (wantDml) {
+            try {
+                createSession(true);
+            } catch (const Ort::Exception& e) {
+                qWarning() << "DirectML 会话失败:" << e.what();
+                m_session.reset();
+                m_activeProvider.clear();
+                m_calibProviderKey.clear();
+                if (requireDml)
+                    return false;
+                qWarning() << "回退 CPU ONNX";
+                createSession(false);
+            }
+        } else {
+            createSession(false);
+        }
     } catch (const Ort::Exception& e) {
         qWarning() << "ONNX 会话创建失败:" << e.what();
         m_session.reset();
+        m_activeProvider.clear();
+        m_calibProviderKey.clear();
         return false;
     }
 
@@ -155,7 +227,8 @@ bool DLDetectionEngine::buildReference(const QStringList& goodImagePaths)
     const QString goodFp = fingerprintGoodImages(goodImagePaths);
     const QString cachePath = calibCachePath(m_modelPath);
     if (tryLoadCalibCache(cachePath, modelSize, modelMtimeMs, inputSize,
-                          goodImagePaths.size(), goodFp, m_calibMean, m_calibStd)) {
+                          goodImagePaths.size(), goodFp, m_calibProviderKey,
+                          m_calibMean, m_calibStd)) {
         qInfo() << "DL 阈值从缓存加载:" << cachePath
                 << "mean=" << m_calibMean << "std=" << m_calibStd
                 << "k=" << thresholdSigma
@@ -199,8 +272,44 @@ bool DLDetectionEngine::buildReference(const QStringList& goodImagePaths)
             << "k=" << thresholdSigma
             << "-> threshold=" << (m_calibMean + thresholdSigma * m_calibStd);
     saveCalibCache(cachePath, modelSize, modelMtimeMs, inputSize,
-                   goodImagePaths.size(), goodFp, m_calibMean, m_calibStd);
+                   goodImagePaths.size(), goodFp, m_calibProviderKey,
+                   m_calibMean, m_calibStd);
     return true;
+}
+
+void DLDetectionEngine::createSession(bool useDml)
+{
+    Ort::SessionOptions opts;
+    opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+    if (useDml) {
+        // DirectML EP 官方约束：关 mem pattern、顺序执行，否则会话创建失败
+        opts.DisableMemPattern();
+        opts.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+        const DmlAdapter ad = pickDmlAdapter();
+        const void* rawApi = nullptr;
+        Ort::ThrowOnError(Ort::GetApi().GetExecutionProviderApi(
+            "DML", ORT_API_VERSION, &rawApi));
+        if (!rawApi)
+            throw Ort::Exception("GetExecutionProviderApi(DML) 返回空", ORT_FAIL);
+        const auto* dmlApi = static_cast<const OrtDmlApiHead*>(rawApi);
+        if (!dmlApi->SessionOptionsAppendExecutionProvider_DML)
+            throw Ort::Exception("OrtDmlApi 缺少 Append DML", ORT_FAIL);
+        Ort::ThrowOnError(
+            dmlApi->SessionOptionsAppendExecutionProvider_DML(opts, ad.deviceId));
+        m_calibProviderKey = QStringLiteral("dml");
+        const qint64 mb = static_cast<qint64>(ad.vramBytes / (1024 * 1024));
+        m_activeProvider = ad.name.isEmpty()
+            ? QStringLiteral("DML (device %1)").arg(ad.deviceId)
+            : QStringLiteral("DML (%1, %2 MB)").arg(ad.name).arg(mb);
+    } else {
+        opts.SetIntraOpNumThreads(4);
+        m_calibProviderKey = QStringLiteral("cpu");
+        m_activeProvider = QStringLiteral("CPU");
+    }
+    // Windows 下 ORTCHAR_T 为 wchar_t
+    m_session = std::make_unique<Ort::Session>(
+        ortEnv(), m_modelPath.toStdWString().c_str(), opts);
+    qInfo() << "ONNX 会话:" << m_activeProvider << m_modelPath;
 }
 
 cv::Mat DLDetectionEngine::anomalyMap(const cv::Mat& image) const

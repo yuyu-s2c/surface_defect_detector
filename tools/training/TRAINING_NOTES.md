@@ -177,10 +177,11 @@ metal_nut 没做同样扫描：k=3、面积 1000 就到了图像级 0.92、误�
 
 产线若只做「剔除不良」，看图像级 / 缺陷检出；要叠掩码看像素 F1。screw 现在是前者能用、后者在细缺陷上不行。
 
-C++ 推理目前是 CPU ONNX，metal_nut 整批约十几分钟。GUI 已把加载/标定/单张/批量放到工作线程，
-底部有进度条；无缓存时才对全部 train/good 做阈值标定（不是训练），结果写到模型旁
-`.calib.json`，之后启动跳过该循环。同进程内再切走内存缓存。
-这是工程问题，不是检测上限。更大模型 / 更高分辨率受本机 RTX 3050 Ti 4GB 限制，P3 不改网络。
+C++ 推理默认 DirectML（Phase 3.6 工作项 1），metal_nut 整批含标定约 13 s；`--provider cpu` 约 10 分钟。
+GUI 已把加载/标定/单张/批量放到工作线程，底部有进度条；无缓存时才对全部 train/good
+做阈值标定（不是训练），结果写到模型旁 `.calib.json`（v2 键含 cpu/dml，两套阈值不混用）。
+模型、良品图指纹与 EP 未变则下次启动跳过。同进程内再切走内存缓存。
+更大模型 / 更高分辨率受本机 RTX 3050 Ti 4GB 限制，P3 不改网络。
 
 ---
 
@@ -199,5 +200,6 @@ src/ResultEvaluator.cpp               指标口径
 
 ```powershell
 .\build\surface_defect_detector.exe --batch metal_nut --engine dl
+.\build\surface_defect_detector.exe --batch metal_nut --engine dl --provider cpu
 .\build\surface_defect_detector.exe --batch screw --engine dl
 ```

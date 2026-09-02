@@ -12,3 +12,4 @@ screw/
 # Phase 2 训练侧：Python venv 与下载缓存（anomalib 预训练权重、imagenette）
 tools/training/.venv/
 tools/training/.cache/
+tools/training/__pycache__/

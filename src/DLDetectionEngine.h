@@ -6,6 +6,10 @@
 
 namespace Ort { struct Env; struct Session; }
 
+// ONNX Runtime 执行器。默认 Auto：先 DirectML，失败回 CPU。
+// CLI `--provider` 可强制；改 EP 必须重建会话（DetectionController 清 DL 缓存）。
+enum class OrtEpKind { Auto, Cpu, Dml };
+
 // 深度学习检测引擎（Phase 2）：加载 anomalib 导出的 EfficientAD ONNX 模型，
 // 输出与 v0.1 传统引擎相同的 DetectionResult 契约。
 //
@@ -18,13 +22,16 @@ namespace Ort { struct Env; struct Session; }
 // 导出不含完整的后处理标定；用 train/good 良品图跑一遍模型，取每张良品热图
 // 最大值的 均值 + kσ 作为像素阈值，与接口契约（buildReference 收良品图）天然吻合，
 // 且随数据集自适应。mean/std 落到模型同目录的 <模型名>.calib.json，下次启动
-// 若 ONNX 与 train/good 指纹未变则跳过良品推理（改 k 仍不触发重标定）。
+// 若 ONNX、train/good 指纹与 EP（cpu/dml）未变则跳过良品推理（改 k 仍不触发重标定）。
 class DLDetectionEngine : public IDetectionEngine
 {
 public:
     // modelPath：EfficientAD ONNX 模型路径（不存在时 buildReference 失败）
-    explicit DLDetectionEngine(const QString& modelPath);
+    explicit DLDetectionEngine(const QString& modelPath, OrtEpKind epKind = OrtEpKind::Auto);
     ~DLDetectionEngine() override; // Ort::Session 为前置声明，析构在 .cpp
+
+    // 实际用上的 EP，如 "DML (NVIDIA GeForce RTX 3050 Ti Laptop GPU, 4096 MB)" / "CPU"
+    QString activeProvider() const { return m_activeProvider; }
 
     // 加载 ONNX 会话，并用良品训练图标定像素阈值（见类注释）
     bool buildReference(const QStringList& goodImagePaths) override;
@@ -44,8 +51,14 @@ private:
     // 推理得到异常热图并上采样到原图尺寸（CV_32F）；失败返回空 Mat
     cv::Mat anomalyMap(const cv::Mat& image) const;
 
+    // useDml 失败抛 Ort::Exception，由 buildReference 决定是否回退 CPU
+    void createSession(bool useDml);
+
     QString m_modelPath;
+    OrtEpKind m_epKind = OrtEpKind::Auto;
     std::unique_ptr<Ort::Session> m_session; // ORT 会话（Env 为进程级静态共享）
+    QString m_activeProvider;     // 给人看
+    QString m_calibProviderKey;   // 标定缓存键："dml" / "cpu"
     // 良品热图最大值的均值/标准差。detect() 用 mean + kσ，改 k 不必重跑标定
     double m_calibMean = 0.0;
     double m_calibStd = 0.0;

@@ -4,6 +4,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -23,9 +24,24 @@ static QString locateDatasetRoot()
     return DatasetManager::findDatasetRoot(candidates);
 }
 
-// 批处理模式：--batch <类别目录或类别名> [--engine cv|dl]
+static OrtEpKind parseOrtEpKind(const QString& v, bool* ok)
+{
+    if (ok)
+        *ok = true;
+    if (v == QStringLiteral("auto"))
+        return OrtEpKind::Auto;
+    if (v == QStringLiteral("cpu"))
+        return OrtEpKind::Cpu;
+    if (v == QStringLiteral("dml"))
+        return OrtEpKind::Dml;
+    if (ok)
+        *ok = false;
+    return OrtEpKind::Auto;
+}
+
+// 批处理模式：--batch <类别目录或类别名> [--engine cv|dl] [--provider auto|cpu|dml]
 // 不弹窗、不进入事件循环，跑完打印指标到 stdout 后退出。
-static int runBatch(const QString& categoryArg, EngineKind engineKind)
+static int runBatch(const QString& categoryArg, EngineKind engineKind, OrtEpKind epKind)
 {
     QTextStream out(stdout);
 
@@ -48,6 +64,7 @@ static int runBatch(const QString& categoryArg, EngineKind engineKind)
 
     DetectionController ctrl;
     ctrl.setEngineKind(engineKind);
+    ctrl.setOrtEpKind(epKind);
     if (!ctrl.loadDataset(datasetRoot)) {
         out << "ERROR: 数据集根目录扫描失败：" << datasetRoot << "\n";
         return 2;
@@ -63,18 +80,26 @@ static int runBatch(const QString& categoryArg, EngineKind engineKind)
     out << "类别: " << category << "\n";
     out << "引擎: " << (engineKind == EngineKind::DL ? QStringLiteral("dl (EfficientAD)")
                                                     : QStringLiteral("cv (传统)")) << "\n";
+    QElapsedTimer timer;
+    timer.start();
 
     if (!ctrl.prepareEngine(category)) {
         out << "ERROR: 无法构建参考模型（" << category
             << (engineKind == EngineKind::DL
-                    ? QStringLiteral(" 的 ONNX 模型缺失或良品图不可读；"
-                                     "先跑 tools/training/train_efficientad.py")
+                    ? QStringLiteral(" 的 ONNX 模型缺失、会话创建失败或良品图不可读；"
+                                     "先跑 tools/training/train_efficientad.py；"
+                                     "DML 失败可试 --provider cpu")
                     : QStringLiteral("/train/good 为空或不可读）"))
             << "\n";
         return 2;
     }
     out << "参考模板已构建（train/good 共 "
-        << dataset.trainGoodImages(category).size() << " 张）\n\n";
+        << dataset.trainGoodImages(category).size() << " 张）\n";
+    if (engineKind == EngineKind::DL) {
+        const QString ep = ctrl.dlProviderLabel(category);
+        out << "ORT provider: " << (ep.isEmpty() ? QStringLiteral("?") : ep) << "\n";
+    }
+    out << "\n";
 
     QObject::connect(&ctrl, &DetectionController::imageProcessed, &ctrl,
                      [&out](const QString& defect, const QString& imgPath,
@@ -140,6 +165,7 @@ static int runBatch(const QString& categoryArg, EngineKind engineKind)
                    .arg(goodIm.total - goodIm.correct)
                    .arg(goodIm.total);
     }
+    out << QStringLiteral("elapsed: %1 s\n").arg(timer.elapsed() / 1000.0, 0, 'f', 1);
     out.flush();
     return 0;
 }
@@ -183,7 +209,8 @@ int main(int argc, char* argv[])
         QCoreApplication::setOrganizationName(QStringLiteral("surface_defect_detector"));
         QCoreApplication::setApplicationName(QStringLiteral("surface_defect_detector"));
         if (batchIdx + 1 >= raw.size()) {
-            QTextStream(stderr) << "用法: surface_defect_detector --batch <类别目录或类别名> [--engine cv|dl]\n";
+            QTextStream(stderr) << "用法: surface_defect_detector --batch <类别目录或类别名>"
+                                   " [--engine cv|dl] [--provider auto|cpu|dml]\n";
             return 2;
         }
         EngineKind engineKind = EngineKind::Traditional;
@@ -197,7 +224,22 @@ int main(int argc, char* argv[])
                 return 2;
             }
         }
-        return runBatch(raw.at(batchIdx + 1), engineKind);
+        OrtEpKind epKind = OrtEpKind::Auto;
+        const int providerIdx = raw.indexOf(QStringLiteral("--provider"));
+        if (providerIdx >= 0) {
+            if (providerIdx + 1 >= raw.size()) {
+                QTextStream(stderr) << "用法: --provider auto|cpu|dml\n";
+                return 2;
+            }
+            bool ok = false;
+            epKind = parseOrtEpKind(raw.at(providerIdx + 1), &ok);
+            if (!ok) {
+                QTextStream(stderr) << "未知 provider: " << raw.at(providerIdx + 1)
+                                    << "（可选 auto|cpu|dml）\n";
+                return 2;
+            }
+        }
+        return runBatch(raw.at(batchIdx + 1), engineKind, epKind);
     }
 
     return runGui(argc, argv);

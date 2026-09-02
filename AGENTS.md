@@ -8,7 +8,8 @@
 + EfficientAD ONNX（Phase 2，已收住）+ Phase 3 工程化（参数/导出/双引擎对比/GUI 异步）
 + Phase 3.5 QML/MVVM 界面重做。
 数据集为 MVTec AD（metal_nut、screw，无监督设定：train/ 只有良品）。
-训练说明见 tools/training/TRAINING_NOTES.md。下一阶段是 Phase 4（相机/PLC，远期）。
+训练说明见 tools/training/TRAINING_NOTES.md。Phase 3.6 工作项 1（DirectML）已完成；
+接下来是图像级分数 / 新类别接入。Phase 4（相机/PLC）等实机。
 
 ## 构建与运行
 
@@ -23,7 +24,7 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
 
 # 验证（改完代码必跑）
 ./build/surface_defect_detector.exe --batch metal_nut           # 传统，115 张无崩溃
-./build/surface_defect_detector.exe --batch metal_nut --engine dl  # DL，需 models/.../onnx
+./build/surface_defect_detector.exe --batch metal_nut --engine dl  # DL，默认 DirectML
 ```
 
 ## 环境事实（已核实，勿再探测）
@@ -32,6 +33,9 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
   CMake `D:/Qt/Tools/CMake_64/bin`，Ninja `D:/Qt/Tools/Ninja`
 - OpenCV 4.5.5 MinGW 预编译包在 `third_party/opencv/`（gitignore，不在仓库里；
   缺失时从 huihut/OpenCV-MinGW-Build 的 tag OpenCV-4.5.5-x64 重新下载）
+- ONNX Runtime C++：`third_party/onnxruntime/` 为 DirectML 1.24.4（gitignore）。
+  缺失时 `powershell -ExecutionPolicy Bypass -File tools/fetch_onnxruntime_dml.ps1`。
+  不要下 CPU zip 或 CUDA EP（MinGW）。Python 训练仍是 onnxruntime==1.29.0。
 - 硬件：RTX 3050 Ti 4GB 显存，Python 3.12.10
 - Windows + Git Bash 环境，用 Unix 语法和正斜杠路径
 

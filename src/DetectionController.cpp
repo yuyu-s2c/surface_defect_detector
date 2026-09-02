@@ -121,6 +121,30 @@ void DetectionController::setEngineKind(EngineKind kind)
     m_engineKind = kind;
 }
 
+void DetectionController::setOrtEpKind(OrtEpKind kind)
+{
+    QMutexLocker lock(&m_mutex);
+    if (m_ortEpKind == kind)
+        return;
+    m_ortEpKind = kind;
+    qDeleteAll(m_dlEngines);
+    m_dlEngines.clear();
+    m_lastDl.clear();
+}
+
+OrtEpKind DetectionController::ortEpKind() const
+{
+    QMutexLocker lock(&m_mutex);
+    return m_ortEpKind;
+}
+
+QString DetectionController::dlProviderLabel(const QString& category) const
+{
+    QMutexLocker lock(&m_mutex);
+    auto* engine = dynamic_cast<DLDetectionEngine*>(m_dlEngines.value(category, nullptr));
+    return engine ? engine->activeProvider() : QString();
+}
+
 void DetectionController::setTraditionalParams(const QString& category,
                                                const TraditionalParams& p)
 {
@@ -163,6 +187,7 @@ IDetectionEngine* DetectionController::engineFor(const QString& category)
     if (IDetectionEngine* engine = cached.value(category, nullptr))
         return engine;
     const EngineKind kind = m_engineKind;
+    const OrtEpKind epKind = m_ortEpKind;
     const TraditionalParams cvParams = m_traditionalParams.contains(category)
         ? m_traditionalParams.value(category)
         : TraditionalParams::defaults();
@@ -181,7 +206,7 @@ IDetectionEngine* DetectionController::engineFor(const QString& category)
         const QString fallback = QStringLiteral("%1/models/%2/%2.onnx")
                                      .arg(root, category);
         const QString modelPath = QFileInfo::exists(exported) ? exported : fallback;
-        auto* dl = new DLDetectionEngine(modelPath);
+        auto* dl = new DLDetectionEngine(modelPath, epKind);
         applyDLParams(dl, dlP);
         newEngine = dl;
         emit progressChanged(0, 0, QStringLiteral("正在加载 ONNX 模型（%1）…").arg(category));
@@ -194,6 +219,10 @@ IDetectionEngine* DetectionController::engineFor(const QString& category)
     if (!newEngine->buildReference(good)) {
         delete newEngine;
         return nullptr;
+    }
+    if (auto* dl = dynamic_cast<DLDetectionEngine*>(newEngine)) {
+        emit progressChanged(0, 0,
+                             QStringLiteral("ONNX 已加载（%1 / %2）").arg(category, dl->activeProvider()));
     }
 
     lock.relock();
