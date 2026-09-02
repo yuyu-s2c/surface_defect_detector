@@ -166,7 +166,7 @@ screw DL 120/160、F1 0.4782。
 - **导出**：当前图 PNG；批量 `images/<defect>/*.png` + `per_image.csv` + `summary.csv`（需先跑过该引擎该类别批量）。
 - **对比**：同一类别 CV vs DL 的 P/R/F1/图像级 + ΔF1；缺哪侧批量补跑哪侧。两类引擎分缓存。
 - **叠加**：红 = GT 标注（`ground_truth/`），绿 = 当前引擎检出；`good` 无红。
-- **GUI 线程**：加载 / 标定 / 单张 / 批量在工作线程，底部状态栏进度条。首次切 DL 要对全部 `train/good` 跑 ONNX 标定阈值（metal_nut 220 张、screw 320 张，约 1～2 分钟），不是训练；同进程再切走缓存。`--batch` 仍同步。
+- **GUI 线程**：加载 / 标定 / 单张 / 批量在工作线程，底部状态栏进度条。切 DL 时若模型旁没有有效 `.calib.json`，才对全部 `train/good` 跑 ONNX 标定阈值（metal_nut 220 张、screw 320 张，约 1～2 分钟，不是训练），结果写到 `models/<类>/weights/onnx/<类>.calib.json`；模型或良品图指纹未变则下次启动跳过该循环。同进程再切走内存缓存。`--batch` 仍同步，共用该文件缓存。
 
 ### Phase 4 产线对接（远期）
 

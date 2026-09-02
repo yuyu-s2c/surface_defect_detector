@@ -5,7 +5,13 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
 
+#include <QCryptographicHash>
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QtDebug>
 
 #include <cstring>
@@ -17,6 +23,88 @@ Ort::Env& ortEnv()
 {
     static Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "surface_defect_detector");
     return env;
+}
+
+// 缓存格式版本：统计方式变了就升，强制重跑 train/good
+constexpr int kCalibCacheVersion = 1;
+
+QString calibCachePath(const QString& modelPath)
+{
+    const QFileInfo fi(modelPath);
+    return fi.dir().filePath(fi.completeBaseName() + QStringLiteral(".calib.json"));
+}
+
+// 不读像素：文件名 + size + mtime，比跑一遍 ONNX 便宜几个数量级
+QString fingerprintGoodImages(const QStringList& paths)
+{
+    QStringList sorted = paths;
+    sorted.sort();
+    QCryptographicHash hash(QCryptographicHash::Sha1);
+    for (const QString& p : sorted) {
+        const QFileInfo fi(p);
+        const QByteArray line = QStringLiteral("%1|%2|%3\n")
+                                    .arg(fi.fileName())
+                                    .arg(fi.size())
+                                    .arg(fi.lastModified().toMSecsSinceEpoch())
+                                    .toUtf8();
+        hash.addData(line);
+    }
+    return QString::fromLatin1(hash.result().toHex());
+}
+
+bool tryLoadCalibCache(const QString& path, qint64 modelSize, qint64 modelMtimeMs,
+                       int inputSize, int goodCount, const QString& goodFp,
+                       double& mean, double& stddev)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+        return false;
+    QJsonParseError err;
+    const QJsonDocument doc = QJsonDocument::fromJson(f.readAll(), &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject()) {
+        qWarning() << "DL 标定缓存损坏，忽略:" << path << err.errorString();
+        return false;
+    }
+    const QJsonObject obj = doc.object();
+    if (obj.value(QStringLiteral("version")).toInt() != kCalibCacheVersion)
+        return false;
+    if (obj.value(QStringLiteral("inputSize")).toInt() != inputSize)
+        return false;
+    if (obj.value(QStringLiteral("modelSize")).toInteger() != modelSize)
+        return false;
+    if (obj.value(QStringLiteral("modelMtimeMs")).toInteger() != modelMtimeMs)
+        return false;
+    if (obj.value(QStringLiteral("goodCount")).toInt() != goodCount)
+        return false;
+    if (obj.value(QStringLiteral("goodFingerprint")).toString() != goodFp)
+        return false;
+    if (!obj.contains(QStringLiteral("calibMean")) || !obj.contains(QStringLiteral("calibStd")))
+        return false;
+    mean = obj.value(QStringLiteral("calibMean")).toDouble();
+    stddev = obj.value(QStringLiteral("calibStd")).toDouble();
+    return true;
+}
+
+void saveCalibCache(const QString& path, qint64 modelSize, qint64 modelMtimeMs,
+                    int inputSize, int goodCount, const QString& goodFp,
+                    double mean, double stddev)
+{
+    QJsonObject obj;
+    obj.insert(QStringLiteral("version"), kCalibCacheVersion);
+    obj.insert(QStringLiteral("inputSize"), inputSize);
+    obj.insert(QStringLiteral("modelSize"), modelSize);
+    obj.insert(QStringLiteral("modelMtimeMs"), modelMtimeMs);
+    obj.insert(QStringLiteral("goodCount"), goodCount);
+    obj.insert(QStringLiteral("goodFingerprint"), goodFp);
+    obj.insert(QStringLiteral("calibMean"), mean);
+    obj.insert(QStringLiteral("calibStd"), stddev);
+
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        qWarning() << "DL 标定缓存写入失败:" << path << f.errorString();
+        return;
+    }
+    f.write(QJsonDocument(obj).toJson(QJsonDocument::Indented));
 }
 } // namespace
 
@@ -61,6 +149,20 @@ bool DLDetectionEngine::buildReference(const QStringList& goodImagePaths)
         return false;
     }
 
+    const QFileInfo modelInfo(m_modelPath);
+    const qint64 modelSize = modelInfo.size();
+    const qint64 modelMtimeMs = modelInfo.lastModified().toMSecsSinceEpoch();
+    const QString goodFp = fingerprintGoodImages(goodImagePaths);
+    const QString cachePath = calibCachePath(m_modelPath);
+    if (tryLoadCalibCache(cachePath, modelSize, modelMtimeMs, inputSize,
+                          goodImagePaths.size(), goodFp, m_calibMean, m_calibStd)) {
+        qInfo() << "DL 阈值从缓存加载:" << cachePath
+                << "mean=" << m_calibMean << "std=" << m_calibStd
+                << "k=" << thresholdSigma
+                << "-> threshold=" << (m_calibMean + thresholdSigma * m_calibStd);
+        return true;
+    }
+
     // 阈值标定：跑全部良品图，统计每张热图最大值的均值与标准差。
     // 良品热图最大值反映"正常波动的上限"，缺陷图的异常区域应显著高于它。
     cv::Mat maxes;
@@ -96,6 +198,8 @@ bool DLDetectionEngine::buildReference(const QStringList& goodImagePaths)
             << "良品热图最大值 mean=" << m_calibMean << "std=" << m_calibStd
             << "k=" << thresholdSigma
             << "-> threshold=" << (m_calibMean + thresholdSigma * m_calibStd);
+    saveCalibCache(cachePath, modelSize, modelMtimeMs, inputSize,
+                   goodImagePaths.size(), goodFp, m_calibMean, m_calibStd);
     return true;
 }
 

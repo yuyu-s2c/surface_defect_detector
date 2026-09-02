@@ -13,7 +13,7 @@ Phases 1–3 are done (CV baseline / EfficientAD / engineering). Phase 4 (camera
 ./build/surface_defect_detector.exe --batch metal_nut --engine dl
 ```
 
-GUI overlay: red = ground-truth mask, green = detection. The first switch to DL calibrates on `train/good` (about 1–2 minutes); that is not training.
+GUI overlay: red = ground-truth mask, green = detection. Switching to DL calibrates on `train/good` once (about 1–2 minutes; that is not training) and writes `<model>.calib.json` next to the ONNX file; later launches reuse it until the model or good-image set changes.
 
 1.  xxxx
 2.  xxxx

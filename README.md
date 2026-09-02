@@ -16,7 +16,7 @@
 ./build/surface_defect_detector.exe --batch metal_nut --engine dl
 ```
 
-GUI：红=GT 标注，绿=检测结果。首次切深度学习会标定 `train/good`（约 1～2 分钟），不是训练。
+GUI：红=GT 标注，绿=检测结果。切深度学习时若尚无标定缓存，会跑一遍 `train/good`（约 1～2 分钟，不是训练）；之后启动复用模型旁的 `.calib.json`。
 
 #### 参与贡献
 

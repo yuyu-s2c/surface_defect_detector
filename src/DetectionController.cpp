@@ -84,7 +84,7 @@ void DetectionController::attachProgress(IDetectionEngine* engine, EngineKind ki
         if (m_abort.load())
             return false;
         const QString msg = (kind == EngineKind::DL)
-            ? QStringLiteral("标定 DL 阈值（%1）%2/%3 — 首次需跑完全部良品图")
+            ? QStringLiteral("标定 DL 阈值（%1）%2/%3")
                   .arg(category).arg(current).arg(total)
             : QStringLiteral("构建传统参考模型（%1）%2/%3")
                   .arg(category).arg(current).arg(total);

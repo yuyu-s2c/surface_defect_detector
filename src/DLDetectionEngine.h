@@ -17,7 +17,8 @@ namespace Ort { struct Env; struct Session; }
 // 存的阈值：anomalib 的阈值/归一化参数存在其 checkpoint 的 metadata 里，ONNX
 // 导出不含完整的后处理标定；用 train/good 良品图跑一遍模型，取每张良品热图
 // 最大值的 均值 + kσ 作为像素阈值，与接口契约（buildReference 收良品图）天然吻合，
-// 且随数据集自适应。
+// 且随数据集自适应。mean/std 落到模型同目录的 <模型名>.calib.json，下次启动
+// 若 ONNX 与 train/good 指纹未变则跳过良品推理（改 k 仍不触发重标定）。
 class DLDetectionEngine : public IDetectionEngine
 {
 public:
