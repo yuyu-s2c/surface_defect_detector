@@ -14,8 +14,9 @@ struct DetectionResult
     std::vector<cv::Rect> boxes;        // 缺陷外接框
     std::vector<double> areas;          // 各缺陷像素面积
     double totalArea = 0.0;             // 缺陷总像素数（连通域过滤后）
+    int minImageArea = 1000;            // 图像级检出面积门；引擎 detect() 写入
     // 图像级检出判定：缺陷总面积达到阈值才算检出（零散噪声不报警）
-    bool detected(int minTotalArea = 1000) const { return totalArea >= minTotalArea; }
+    bool detected() const { return totalArea >= minImageArea; }
 };
 
 // 检测引擎抽象接口。Phase 2 的深度学习引擎（EfficientAD）实现同一接口即可接入，

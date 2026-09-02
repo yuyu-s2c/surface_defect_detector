@@ -113,6 +113,7 @@ DetectionResult DetectionEngine::detect(const cv::Mat& image) const
         result.totalArea += area;
     }
 
+    result.minImageArea = imageLevelMinArea;
     result.defectMask = bin;
     return result;
 }

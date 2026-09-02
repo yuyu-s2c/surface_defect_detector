@@ -34,9 +34,10 @@ public:
 
     // 可调参数
     int inputSize = 256;             // ONNX 模型输入边长（导出时固定 256×256）
-    double thresholdSigma = 3.0;     // 阈值 = 良品热图逐图最大值的均值 + kσ
+    double thresholdSigma = 3.0;     // 阈值 = 良品热图逐图最大值的均值 + kσ（默认 3；screw 由 Controller 改为 1.0）
     int morphCloseKernel = 21;       // 闭运算核（与传统引擎一致）
     int minDefectArea = 100;         // 连通域最小面积（像素）
+    int imageLevelMinArea = 1000;    // 图像级检出面积门（screw 由 Controller 改为 300）
 
 private:
     // 推理得到异常热图并上采样到原图尺寸（CV_32F）；失败返回空 Mat

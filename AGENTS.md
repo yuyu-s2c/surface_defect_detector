@@ -4,9 +4,9 @@
 
 ## 项目概况
 
-工业产品表面缺陷检测工具：Qt6 Widgets 桌面应用 + OpenCV 传统检测（v0.1 基线），
-正按阶段迭代，下一阶段（Phase 2）接入 EfficientAD 深度学习异常检测。
-数据集为 MVTec AD（metal_nut、screw，无监督设定：train/ 只有良品）。
+工业产品表面缺陷检测工具：Qt6 Widgets 桌面应用 + OpenCV 传统检测（v0.1）
++ EfficientAD ONNX（Phase 2，已收住）。数据集为 MVTec AD（metal_nut、screw，
+无监督设定：train/ 只有良品）。训练说明见 tools/training/TRAINING_NOTES.md。
 
 ## 构建与运行
 
@@ -20,7 +20,8 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe -S . -B build -G Ninja \
 D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
 
 # 验证（改完代码必跑）
-./build/surface_defect_detector.exe --batch metal_nut   # 应跑完 115 张无崩溃
+./build/surface_defect_detector.exe --batch metal_nut           # 传统，115 张无崩溃
+./build/surface_defect_detector.exe --batch metal_nut --engine dl  # DL，需 models/.../onnx
 ```
 
 ## 环境事实（已核实，勿再探测）
@@ -39,8 +40,8 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
   DetectionController、ResultEvaluator、main.cpp 批处理三处。
 - **分层**：MainWindow 纯视图（只做展示与转发）；DetectionController 是应用服务层
   （数据集 + 引擎缓存 + 批量编排，GUI 与 --batch 共用）；新引擎实现 IDetectionEngine 即可接入。
-- **不要动数据集**：metal_nut/、screw/ 只读；嵌套重复目录（metal_nut/metal_nut 等）
-  忽略不用，也不要删。
+- **不要动数据集**：metal_nut/、screw/ 只读（顶层 train/、test/、ground_truth/）。
+  曾因解压套一层出现 metal_nut/metal_nut、screw/screw，已删除；若再出现则忽略。
 - **不入库**：third_party/、build*/、models/（见 .gitignore）。
 - **不执行 git 提交/推送等变更操作**，除非用户明确要求。
 - 代码注释用中文，风格对齐现有文件（解释"为什么"，关键实测依据写入注释）。

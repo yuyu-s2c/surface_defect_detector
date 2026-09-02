@@ -5,6 +5,7 @@
 
 #include <opencv2/imgcodecs.hpp>
 
+#include <QFileInfo>
 #include <QtDebug>
 
 DetectionController::DetectionController(QObject* parent)
@@ -45,10 +46,23 @@ IDetectionEngine* DetectionController::engineFor(const QString& category)
 
     IDetectionEngine* newEngine = nullptr;
     if (m_engineKind == EngineKind::DL) {
-        // 训练侧导出约定：models/<类别>/<类别>.onnx（train_efficientad.py 产物）
-        const QString modelPath = QStringLiteral("%1/models/%2/%2.onnx")
-                                      .arg(m_dataset.rootPath(), category);
-        newEngine = new DLDetectionEngine(modelPath);
+        // anomalib Engine.export 实际落点：models/<类别>/weights/onnx/<类别>.onnx
+        // （train_efficientad.py 产物）。旧约定 models/<类别>/<类别>.onnx 作回退。
+        const QString root = m_dataset.rootPath();
+        const QString exported = QStringLiteral("%1/models/%2/weights/onnx/%2.onnx")
+                                     .arg(root, category);
+        const QString fallback = QStringLiteral("%1/models/%2/%2.onnx")
+                                     .arg(root, category);
+        const QString modelPath = QFileInfo::exists(exported) ? exported : fallback;
+        auto* dl = new DLDetectionEngine(modelPath);
+        // metal_nut：k=3、面积门 1000，图像级 0.92、good 误报 4.5%，保持。
+        // screw：k 降到 1.0 后图像级 0.69、F1 走平、thread_side 不再跟 k 涨；
+        // 细缺陷过线后 totalArea 仍 <1000。面积门改为 300，k 维持 1.0。
+        if (category == QStringLiteral("screw")) {
+            dl->thresholdSigma = 1.0;
+            dl->imageLevelMinArea = 300;
+        }
+        newEngine = dl;
     } else {
         newEngine = new DetectionEngine;
     }

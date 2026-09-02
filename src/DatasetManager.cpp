@@ -98,7 +98,7 @@ QString DatasetManager::findDatasetRoot(const QStringList& candidateDirs)
 bool DatasetManager::isCategoryDir(const QString& path)
 {
     // 合法类别目录：含 test/ 且 test/ 下至少有一个含图片的子目录。
-    // 嵌套重复目录（metal_nut/metal_nut）不含 test/，自然被排除。
+    // scan() 只扫数据集根的直接子目录，不会把解压套层当成新类别。
     QDir testDir(path + QStringLiteral("/test"));
     if (!testDir.exists())
         return false;

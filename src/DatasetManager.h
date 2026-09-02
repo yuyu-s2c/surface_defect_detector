@@ -13,7 +13,7 @@ class DatasetManager
 {
 public:
     // 扫描数据集根目录（包含 metal_nut/、screw/ 等类别目录的目录）。
-    // 只认顶层类别目录，忽略嵌套重复目录（如 metal_nut/metal_nut）。
+    // 只认顶层类别目录（含 test/ 的才算一类）；解压套层目录没有顶层 test/，自然排除。
     // 返回发现的类别数。
     int scan(const QString& datasetRoot);
 

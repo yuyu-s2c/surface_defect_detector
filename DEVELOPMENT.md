@@ -34,6 +34,8 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
 # 命令行批处理（不弹窗，跑完输出指标后退出）
 ./build/surface_defect_detector.exe --batch metal_nut
 ./build/surface_defect_detector.exe --batch screw
+./build/surface_defect_detector.exe --batch metal_nut --engine dl
+./build/surface_defect_detector.exe --batch screw --engine dl
 ```
 
 注意：Ninja 不在 PATH，配置时必须显式传 `CMAKE_MAKE_PROGRAM`。
@@ -50,11 +52,14 @@ surface_defect_detector/
 │   ├── DetectionController.h/.cpp # 应用服务层：数据集 + 引擎缓存 + 批量编排（GUI/CLI 共用）
 │   ├── IDetectionEngine.h      # 检测引擎抽象接口 + DetectionResult 输出契约
 │   ├── DetectionEngine.h/.cpp  # 传统 CV 检测引擎（v0.1 基线，IDetectionEngine 实现）
+│   ├── DLDetectionEngine.h/.cpp # EfficientAD ONNX 推理（Phase 2）
 │   ├── DatasetManager.h/.cpp   # 数据集加载：类别→缺陷类型→图片，配对 GT 掩码
 │   ├── ImageViewWidget.h/.cpp  # QGraphicsView 看图：缩放平移，GT/检测结果叠加
 │   └── ResultEvaluator.h/.cpp  # 像素级 P/R/F1/IoU + 图像级检出评估
+├── tools/training/           # Python 训练侧（anomalib / EfficientAD）
+├── models/                   # ONNX / ckpt（gitignore，不入库）
 ├── third_party/opencv/       # OpenCV 预编译包（gitignore）
-├── metal_nut/  screw/        # MVTec AD 数据集（嵌套重复目录忽略不用）
+├── metal_nut/  screw/        # MVTec AD 数据集（顶层 train/test/ground_truth）
 └── build/                    # 构建产物（gitignore）
 ```
 
@@ -67,7 +72,7 @@ surface_defect_detector/
 
 - `cv::Mat defectMask`：8UC1，0/255 缺陷掩码
 - `std::vector<cv::Rect> boxes` / `std::vector<double> areas`：缺陷框与面积
-- `bool detected(int minTotalArea)`：图像级检出判定（缺陷总面积 ≥ 阈值）
+- `bool detected()`：图像级检出判定（`totalArea >= minImageArea`；DL/传统由引擎写入面积门）
 
 后续深度学习引擎只要实现该接口产出同一结构，UI、编排、评估器、批处理模式均无需改动。
 
@@ -95,32 +100,57 @@ screw 类因旋转差异无配准，基本无效（good 误报率 100%），为�
 结论：朴素像素差分在此数据集已到天花板（scratch 像素值与良品波动重叠），
 不继续在传统路线上调参，直接进入深度学习阶段。
 
-### Phase 2 🚩 深度学习异常检测（下一阶段）
+### Phase 2 ✅ 深度学习异常检测（已收住）
 
-**选型：EfficientAD**（W. Batzner et al., WACV 2024）。
+**选型：EfficientAD**（W. Batzner et al., WACV 2024）+ anomalib 2.6.0 训练，
+ONNX Runtime C++ 推理。训练过程说明见 [tools/training/TRAINING_NOTES.md](tools/training/TRAINING_NOTES.md)，
+命令见 [tools/training/TRAIN.md](tools/training/TRAIN.md)。
 
-理由：MVTec AD 上图像级 AUROC ≈99%、像素级 ≈97%（论文值），毫秒级推理；
-小模型，4GB 显存可训练（输入 256×256、小 batch）；anomalib 官方实现并支持 ONNX 导出。
-备选：PatchCore（无需训练，但 k-NN coreset 难以 ONNX 化，C++ 部署成本高）。
+每类一个模型，导出 `models/<类别>/weights/onnx/<类别>.onnx`（不入库）。
+C++ `DLDetectionEngine` 用 `train/good` 标定像素阈值（`mean + kσ`），再形态学 + 连通域，
+输出与 v0.1 相同的 `DetectionResult`。GUI 可选引擎，CLI：`--engine dl`。
 
-**技术流程**：
+**工作点**（`DetectionController`）：metal_nut `k=3`、面积门 1000；screw `k=1`、面积门 300。
 
-1. **训练侧（Python）**：项目内建 `tools/training/`，创建 venv（Python 3.12），
-   安装 anomalib；数据集按 anomalib Folder 格式组织（现有目录结构直接兼容，
-   写配置指向 `metal_nut/`、`screw/` 即可）；每类产品训一个模型，导出 ONNX。
-   - 模型文件放 `models/<类别>.onnx`，**不入库**（gitignore），文档记录产出方式。
-   - 训练显存 4GB 偏紧：batch size 1、输入 256×256，必要时梯度累积。
-2. **推理侧（C++）**：新增 `DLDetectionEngine`，加载 ONNX 模型推理出异常热图，
-   阈值化 + 连通域得到 `DetectionResult`（复用现有契约与阈值后处理）。
-   - 推理后端首选 **ONNX Runtime C API**（官方 Windows 包为 MSVC 构建，但 C ABI 与
-     MinGW 兼容，ld 可直接链接 onnxruntime.dll；验证不行再改用运行时动态加载）。
-   - 备选后端：OpenCV DNN（third_party 包带 dnn 模块，但对 EfficientAD 算子兼容性待验证）。
-   - UI 增加引擎选择（传统 / 深度学习），批处理模式支持 `--engine dl`。
-3. **验收口径**：与 v0.1 完全相同的评估器与命令（`--batch metal_nut`），对比指标。
-   - 目标：metal_nut 图像级准确率 ≥ 90%，good 误报率 ≤ 10%，scratch F1 显著提升。
+**anomalib 测试**（自适应阈，和 C++ 不是同一口径）：
 
-**风险与备注**：anomalib 版本迭代快，锁定安装版本并写入 `tools/training/requirements.txt`；
-ONNX Runtime 的 MinGW 链接是主要不确定点，先用最小 demo（加载模型跑通一张图）验证再集成。
+| | image_AUROC | image_F1 | pixel_AUROC | pixel_F1 |
+|---|---|---|---|---|
+| metal_nut | 0.986 | 0.973 | 0.974 | 0.806 |
+| screw | 0.975 | 0.948 | 0.985 | 0.511 |
+
+**C++ `--batch --engine dl`（与 v0.1 同口径）**
+
+metal_nut，115 张：
+
+| 类别 | 像素级 P | R | F1 | 图像级准确率 |
+|---|---|---|---|---|
+| bent | 0.87 | 0.57 | 0.69 | 1.00（25/25） |
+| color | 0.65 | 0.85 | 0.74 | 0.91（20/22） |
+| flip | 0.88 | 0.09 | 0.17 | 1.00（23/23） |
+| scratch | 0.94 | 0.30 | 0.45 | 0.74（17/23） |
+| good（误报率） | — | — | — | 0.045（1/22） |
+| **汇总** | 0.83 | 0.16 | 0.27 | **0.92**（106/115） |
+
+对照目标：图像级 ≥90%、good 误报 ≤10%、scratch F1 相对 v0.1 的 0.02 显著提升，均达到。
+汇总像素 F1 0.27 略低于 v0.1 的 0.29，因为 flip 热图只打局部、GT 是整颗，图像级已全中。
+
+screw，160 张（v0.1 因无配准基本无效）：
+
+| 类别 | 像素级 P | R | F1 | 图像级准确率 |
+|---|---|---|---|---|
+| scratch_head | 0.31 | 0.60 | 0.41 | 0.71（17/24） |
+| scratch_neck | 0.48 | 0.84 | 0.61 | 0.92（23/25） |
+| thread_side | 0.09 | 0.05 | 0.06 | 0.35（8/23） |
+| thread_top | 0.49 | 0.78 | 0.60 | 1.00（23/23） |
+| manipulated_front | 0.67 | 0.21 | 0.32 | 0.38（9/24） |
+| good（误报率） | — | — | — | 0.024（1/41） |
+| **汇总** | 0.43 | 0.54 | 0.48 | **0.75**（120/160） |
+
+缺陷检出 80/119（67%）。`thread_side` / `manipulated_front` 为已知短板；k 与面积门已扫过，再拧收益有限。
+网络排序（AUROC）已接近 EfficientAD 小模型上限，C++ 硬判决与 anomalib 的 0.95 图像 F1 仍有缝。
+
+推理目前 CPU ONNX，整批约十几分钟。不继续在同一小模型上堆 step。
 
 ### Phase 3 工程化（之后）
 
