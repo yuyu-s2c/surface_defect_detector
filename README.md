@@ -1,23 +1,22 @@
 # surface_defect_detector
 
-#### 介绍
-工业产品表面缺陷检测系统
+工业产品表面缺陷检测桌面工具（Qt6 + OpenCV + EfficientAD ONNX）。
 
-#### 软件架构
-软件架构说明
+阶段状态、架构、构建命令和实测指标见 [DEVELOPMENT.md](DEVELOPMENT.md)。
+给 AI 代理的约定见 [AGENTS.md](AGENTS.md)。训练见 [tools/training/TRAIN.md](tools/training/TRAIN.md)。
 
+当前进度：Phase 1～3 已完成（传统基线 / EfficientAD / 工程化），Phase 4 产线对接为远期。
 
-#### 安装教程
+```bash
+# GUI
+./build/surface_defect_detector.exe
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+# 批处理（与 DEVELOPMENT.md 第 4 节同口径，不读 GUI 设置）
+./build/surface_defect_detector.exe --batch metal_nut
+./build/surface_defect_detector.exe --batch metal_nut --engine dl
+```
 
-#### 使用说明
-
-1.  xxxx
-2.  xxxx
-3.  xxxx
+GUI：红=GT 标注，绿=检测结果。首次切深度学习会标定 `train/good`（约 1～2 分钟），不是训练。
 
 #### 参与贡献
 

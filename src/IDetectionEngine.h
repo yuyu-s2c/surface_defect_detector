@@ -4,6 +4,8 @@
 
 #include <QString>
 #include <QStringList>
+
+#include <functional>
 #include <vector>
 
 // 单张图的检测结果：所有检测引擎（传统 CV / 深度学习）的统一输出契约。
@@ -26,6 +28,10 @@ class IDetectionEngine
 public:
     virtual ~IDetectionEngine() = default;
 
+    // current/total；返回 false 则中止 buildReference（窗口关闭时）
+    using ProgressFn = std::function<bool(int current, int total)>;
+    void setProgressCallback(ProgressFn cb) { m_progress = std::move(cb); }
+
     // 用该产品类的良品训练图构建参考模型；goodImagePaths 为空则构建失败
     virtual bool buildReference(const QStringList& goodImagePaths) = 0;
 
@@ -33,4 +39,13 @@ public:
 
     // 对一张原图（BGR 或灰度）执行检测；尺寸不符由实现内部统一到模型输入尺寸
     virtual DetectionResult detect(const cv::Mat& image) const = 0;
+
+protected:
+    bool reportProgress(int current, int total) const
+    {
+        return m_progress ? m_progress(current, total) : true;
+    }
+
+private:
+    ProgressFn m_progress;
 };

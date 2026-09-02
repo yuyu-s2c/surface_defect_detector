@@ -32,6 +32,9 @@ set(PROJECT_SOURCES
     src/DLDetectionEngine.cpp
     src/DetectionController.h
     src/DetectionController.cpp
+    src/EngineParams.h
+    src/ResultExporter.h
+    src/ResultExporter.cpp
     src/ResultEvaluator.h
     src/ResultEvaluator.cpp
 )

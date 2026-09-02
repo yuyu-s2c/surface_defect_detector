@@ -1,0 +1,36 @@
+#pragma once
+
+#include <QString>
+
+// 传统 CV / DL 引擎 GUI 可调参数（Phase 3）。
+// 默认值与 Phase 2 收住的工作点一致，保证未改参时 --batch 口径不漂。
+// gaussianKernel / stdEps / aggWindow / inputSize 仍是算法常量，不开放。
+
+struct TraditionalParams
+{
+    double zAggThreshold = 1.4;   // 聚合分数阈值
+    int morphCloseKernel = 21;    // 闭运算核
+    int minDefectArea = 100;      // 连通域最小面积（像素）
+    int imageLevelMinArea = 1000; // 图像级检出面积门
+
+    static TraditionalParams defaults() { return {}; }
+};
+
+struct DLParams
+{
+    double thresholdSigma = 3.0;  // 阈值 = 良品热图最大值均值 + kσ
+    int morphCloseKernel = 21;
+    int minDefectArea = 100;
+    int imageLevelMinArea = 1000;
+
+    // screw：P2 实测 k=1.0、面积门 300；其余类别用 metal_nut 工作点
+    static DLParams defaultsFor(const QString& category)
+    {
+        DLParams p;
+        if (category == QStringLiteral("screw")) {
+            p.thresholdSigma = 1.0;
+            p.imageLevelMinArea = 300;
+        }
+        return p;
+    }
+};

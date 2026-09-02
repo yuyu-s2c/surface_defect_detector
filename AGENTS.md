@@ -5,8 +5,9 @@
 ## 项目概况
 
 工业产品表面缺陷检测工具：Qt6 Widgets 桌面应用 + OpenCV 传统检测（v0.1）
-+ EfficientAD ONNX（Phase 2，已收住）。数据集为 MVTec AD（metal_nut、screw，
-无监督设定：train/ 只有良品）。训练说明见 tools/training/TRAINING_NOTES.md。
++ EfficientAD ONNX（Phase 2，已收住）+ Phase 3 工程化（已完成：参数/导出/双引擎对比/GUI 异步）。
+数据集为 MVTec AD（metal_nut、screw，无监督设定：train/ 只有良品）。
+训练说明见 tools/training/TRAINING_NOTES.md。下一阶段是 Phase 4（相机/PLC，远期）。
 
 ## 构建与运行
 
@@ -40,6 +41,7 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
   DetectionController、ResultEvaluator、main.cpp 批处理三处。
 - **分层**：MainWindow 纯视图（只做展示与转发）；DetectionController 是应用服务层
   （数据集 + 引擎缓存 + 批量编排，GUI 与 --batch 共用）；新引擎实现 IDetectionEngine 即可接入。
+  GUI 耗时路径走 Controller 工作线程 + 底部进度条；`--batch` 仍同步，不读 QSettings。
 - **不要动数据集**：metal_nut/、screw/ 只读（顶层 train/、test/、ground_truth/）。
   曾因解压套一层出现 metal_nut/metal_nut、screw/screw，已删除；若再出现则忽略。
 - **不入库**：third_party/、build*/、models/（见 .gitignore）。

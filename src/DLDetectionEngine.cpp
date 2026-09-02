@@ -35,7 +35,8 @@ bool DLDetectionEngine::hasReference() const
 bool DLDetectionEngine::buildReference(const QStringList& goodImagePaths)
 {
     m_session.reset();
-    m_threshold = 0.0;
+    m_calibMean = 0.0;
+    m_calibStd = 0.0;
 
     if (!QFileInfo::exists(m_modelPath)) {
         qWarning() << "DL 模型不存在:" << m_modelPath
@@ -63,7 +64,14 @@ bool DLDetectionEngine::buildReference(const QStringList& goodImagePaths)
     // 阈值标定：跑全部良品图，统计每张热图最大值的均值与标准差。
     // 良品热图最大值反映"正常波动的上限"，缺陷图的异常区域应显著高于它。
     cv::Mat maxes;
+    const int total = goodImagePaths.size();
+    int i = 0;
     for (const QString& p : goodImagePaths) {
+        ++i;
+        if (!reportProgress(i, total)) {
+            m_session.reset();
+            return false;
+        }
         cv::Mat img = cv::imread(p.toLocal8Bit().constData(), cv::IMREAD_COLOR);
         if (img.empty())
             continue;
@@ -81,10 +89,13 @@ bool DLDetectionEngine::buildReference(const QStringList& goodImagePaths)
     }
     cv::Scalar mean, stddev;
     cv::meanStdDev(maxes, mean, stddev);
-    m_threshold = mean[0] + thresholdSigma * stddev[0];
+    m_calibMean = mean[0];
+    m_calibStd = stddev[0];
+    // 日志用当前 k 算出阈值；detect() 再按当时的 thresholdSigma 现算，改 k 无需重标定
     qInfo() << "DL 阈值标定:" << m_modelPath
-            << "良品热图最大值 mean=" << mean[0] << "std=" << stddev[0]
-            << "-> threshold=" << m_threshold;
+            << "良品热图最大值 mean=" << m_calibMean << "std=" << m_calibStd
+            << "k=" << thresholdSigma
+            << "-> threshold=" << (m_calibMean + thresholdSigma * m_calibStd);
     return true;
 }
 
@@ -168,8 +179,10 @@ DetectionResult DLDetectionEngine::detect(const cv::Mat& image) const
         return result;
 
     // 阈值 + 形态学 + 连通域过滤（与传统引擎同口径）
+    // k 在 detect 时现算，GUI 改 thresholdSigma 不必重跑 train/good 标定
+    const double threshold = m_calibMean + thresholdSigma * m_calibStd;
     cv::Mat bin;
-    cv::threshold(heat, bin, m_threshold, 255, cv::THRESH_BINARY);
+    cv::threshold(heat, bin, threshold, 255, cv::THRESH_BINARY);
     bin.convertTo(bin, CV_8U);
     const int ck = morphCloseKernel | 1;
     const cv::Mat closeKernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(ck, ck));

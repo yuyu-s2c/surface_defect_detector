@@ -45,5 +45,7 @@ private:
 
     QString m_modelPath;
     std::unique_ptr<Ort::Session> m_session; // ORT 会话（Env 为进程级静态共享）
-    double m_threshold = 0.0;                // 标定后的像素阈值
+    // 良品热图最大值的均值/标准差。detect() 用 mean + kσ，改 k 不必重跑标定
+    double m_calibMean = 0.0;
+    double m_calibStd = 0.0;
 };

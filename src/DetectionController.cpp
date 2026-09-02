@@ -6,71 +6,208 @@
 #include <opencv2/imgcodecs.hpp>
 
 #include <QFileInfo>
+#include <QMutexLocker>
+#include <QPointer>
+#include <QRunnable>
 #include <QtDebug>
+
+namespace {
+
+void applyTraditionalParams(DetectionEngine* engine, const TraditionalParams& p)
+{
+    engine->zAggThreshold = p.zAggThreshold;
+    engine->morphCloseKernel = p.morphCloseKernel;
+    engine->minDefectArea = p.minDefectArea;
+    engine->imageLevelMinArea = p.imageLevelMinArea;
+}
+
+void applyDLParams(DLDetectionEngine* engine, const DLParams& p)
+{
+    engine->thresholdSigma = p.thresholdSigma;
+    engine->morphCloseKernel = p.morphCloseKernel;
+    engine->minDefectArea = p.minDefectArea;
+    engine->imageLevelMinArea = p.imageLevelMinArea;
+}
+
+} // namespace
 
 DetectionController::DetectionController(QObject* parent)
     : QObject(parent)
 {
+    m_pool.setMaxThreadCount(1);
 }
 
 DetectionController::~DetectionController()
 {
-    qDeleteAll(m_engines);
+    m_abort.store(true);
+    m_pool.waitForDone();
+    qDeleteAll(m_cvEngines);
+    qDeleteAll(m_dlEngines);
+}
+
+QMap<QString, IDetectionEngine*>& DetectionController::engineMap()
+{
+    return m_engineKind == EngineKind::DL ? m_dlEngines : m_cvEngines;
+}
+
+const QMap<QString, IDetectionEngine*>& DetectionController::engineMap() const
+{
+    return m_engineKind == EngineKind::DL ? m_dlEngines : m_cvEngines;
+}
+
+QMap<QString, BatchMetrics>& DetectionController::lastBatchMap(EngineKind kind)
+{
+    return kind == EngineKind::DL ? m_lastDl : m_lastCv;
+}
+
+const QMap<QString, BatchMetrics>& DetectionController::lastBatchMap(EngineKind kind) const
+{
+    return kind == EngineKind::DL ? m_lastDl : m_lastCv;
+}
+
+bool DetectionController::isBusy() const
+{
+    QMutexLocker lock(&m_mutex);
+    return m_busy;
+}
+
+EngineKind DetectionController::engineKind() const
+{
+    QMutexLocker lock(&m_mutex);
+    return m_engineKind;
+}
+
+void DetectionController::attachProgress(IDetectionEngine* engine, EngineKind kind,
+                                         const QString& category)
+{
+    engine->setProgressCallback([this, kind, category](int current, int total) -> bool {
+        if (m_abort.load())
+            return false;
+        const QString msg = (kind == EngineKind::DL)
+            ? QStringLiteral("标定 DL 阈值（%1）%2/%3 — 首次需跑完全部良品图")
+                  .arg(category).arg(current).arg(total)
+            : QStringLiteral("构建传统参考模型（%1）%2/%3")
+                  .arg(category).arg(current).arg(total);
+        emit progressChanged(current, total, msg);
+        return true;
+    });
+}
+
+void DetectionController::startJob(std::function<void()> fn)
+{
+    m_pool.start(QRunnable::create([fn = std::move(fn)]() { fn(); }));
 }
 
 bool DetectionController::loadDataset(const QString& rootPath)
 {
     if (m_dataset.scan(rootPath) == 0)
         return false;
-    // 数据集换了，已缓存的引擎（基于旧良品图构建）全部失效
-    qDeleteAll(m_engines);
-    m_engines.clear();
+    QMutexLocker lock(&m_mutex);
+    // 数据集换了，已缓存的引擎（基于旧良品图构建）与批量结果全部失效
+    qDeleteAll(m_cvEngines);
+    qDeleteAll(m_dlEngines);
+    m_cvEngines.clear();
+    m_dlEngines.clear();
+    m_lastCv.clear();
+    m_lastDl.clear();
+    m_traditionalParams.clear();
+    m_dlParams.clear();
     return true;
 }
 
 void DetectionController::setEngineKind(EngineKind kind)
 {
-    if (m_engineKind == kind)
-        return;
+    QMutexLocker lock(&m_mutex);
     m_engineKind = kind;
-    // 引擎类型变了，已缓存的引擎实现全部失效
-    qDeleteAll(m_engines);
-    m_engines.clear();
+}
+
+void DetectionController::setTraditionalParams(const QString& category,
+                                               const TraditionalParams& p)
+{
+    QMutexLocker lock(&m_mutex);
+    m_traditionalParams.insert(category, p);
+    auto* engine = dynamic_cast<DetectionEngine*>(m_cvEngines.value(category, nullptr));
+    if (engine)
+        applyTraditionalParams(engine, p);
+}
+
+TraditionalParams DetectionController::traditionalParams(const QString& category) const
+{
+    QMutexLocker lock(&m_mutex);
+    if (m_traditionalParams.contains(category))
+        return m_traditionalParams.value(category);
+    return TraditionalParams::defaults();
+}
+
+void DetectionController::setDLParams(const QString& category, const DLParams& p)
+{
+    QMutexLocker lock(&m_mutex);
+    m_dlParams.insert(category, p);
+    auto* engine = dynamic_cast<DLDetectionEngine*>(m_dlEngines.value(category, nullptr));
+    if (engine)
+        applyDLParams(engine, p);
+}
+
+DLParams DetectionController::dlParams(const QString& category) const
+{
+    QMutexLocker lock(&m_mutex);
+    if (m_dlParams.contains(category))
+        return m_dlParams.value(category);
+    return DLParams::defaultsFor(category);
 }
 
 IDetectionEngine* DetectionController::engineFor(const QString& category)
 {
-    IDetectionEngine* engine = m_engines.value(category, nullptr);
-    if (engine)
+    QMutexLocker lock(&m_mutex);
+    auto& cached = engineMap();
+    if (IDetectionEngine* engine = cached.value(category, nullptr))
         return engine;
+    const EngineKind kind = m_engineKind;
+    const TraditionalParams cvParams = m_traditionalParams.contains(category)
+        ? m_traditionalParams.value(category)
+        : TraditionalParams::defaults();
+    const DLParams dlP = m_dlParams.contains(category)
+        ? m_dlParams.value(category)
+        : DLParams::defaultsFor(category);
+    const QString root = m_dataset.rootPath();
+    const QStringList good = m_dataset.trainGoodImages(category);
+    lock.unlock();
 
     IDetectionEngine* newEngine = nullptr;
-    if (m_engineKind == EngineKind::DL) {
+    if (kind == EngineKind::DL) {
         // anomalib Engine.export 实际落点：models/<类别>/weights/onnx/<类别>.onnx
-        // （train_efficientad.py 产物）。旧约定 models/<类别>/<类别>.onnx 作回退。
-        const QString root = m_dataset.rootPath();
         const QString exported = QStringLiteral("%1/models/%2/weights/onnx/%2.onnx")
                                      .arg(root, category);
         const QString fallback = QStringLiteral("%1/models/%2/%2.onnx")
                                      .arg(root, category);
         const QString modelPath = QFileInfo::exists(exported) ? exported : fallback;
         auto* dl = new DLDetectionEngine(modelPath);
-        // metal_nut：k=3、面积门 1000，图像级 0.92、good 误报 4.5%，保持。
-        // screw：k 降到 1.0 后图像级 0.69、F1 走平、thread_side 不再跟 k 涨；
-        // 细缺陷过线后 totalArea 仍 <1000。面积门改为 300，k 维持 1.0。
-        if (category == QStringLiteral("screw")) {
-            dl->thresholdSigma = 1.0;
-            dl->imageLevelMinArea = 300;
-        }
+        applyDLParams(dl, dlP);
         newEngine = dl;
+        emit progressChanged(0, 0, QStringLiteral("正在加载 ONNX 模型（%1）…").arg(category));
     } else {
-        newEngine = new DetectionEngine;
+        auto* cv = new DetectionEngine;
+        applyTraditionalParams(cv, cvParams);
+        newEngine = cv;
     }
-    if (!newEngine->buildReference(m_dataset.trainGoodImages(category))) {
+    attachProgress(newEngine, kind, category);
+    if (!newEngine->buildReference(good)) {
         delete newEngine;
         return nullptr;
     }
-    m_engines.insert(category, newEngine);
+
+    lock.relock();
+    if (m_engineKind != kind) {
+        delete newEngine;
+        lock.unlock();
+        return engineFor(category);
+    }
+    auto& map = engineMap();
+    if (IDetectionEngine* existing = map.value(category, nullptr)) {
+        delete newEngine;
+        return existing;
+    }
+    map.insert(category, newEngine);
     return newEngine;
 }
 
@@ -95,10 +232,17 @@ bool DetectionController::runBatch(const QString& category, BatchMetrics& out)
 
     out = BatchMetrics{};
     const QStringList defects = m_dataset.defectTypes(category);
+    int total = 0;
+    for (const QString& defect : defects)
+        total += m_dataset.testImages(category, defect).size();
+    int done = 0;
+
     for (const QString& defect : defects) {
         const bool isDefect = (defect != QStringLiteral("good"));
         const QStringList images = m_dataset.testImages(category, defect);
         for (const QString& imgPath : images) {
+            if (m_abort.load())
+                return false;
             cv::Mat img = cv::imread(imgPath.toLocal8Bit().constData(), cv::IMREAD_COLOR);
             if (img.empty())
                 continue;
@@ -107,8 +251,169 @@ bool DetectionController::runBatch(const QString& category, BatchMetrics& out)
             const PixelMetrics pm = ResultEvaluator::evaluatePixel(r.defectMask, gtPath);
             out.pixel[defect] += pm;
             out.image[defect] += ResultEvaluator::evaluateImage(r.detected(), isDefect);
+
+            BatchImageRecord rec;
+            rec.defectType = defect;
+            rec.imagePath = imgPath;
+            rec.result = r;
+            rec.pixel = pm;
+            out.records.push_back(rec);
+
+            ++done;
+            emit progressChanged(done, total,
+                                 QStringLiteral("检测 %1 / %2 / %3（%4/%5）")
+                                     .arg(category, defect, QFileInfo(imgPath).fileName())
+                                     .arg(done).arg(total));
             emit imageProcessed(defect, imgPath, r, pm);
         }
     }
+    QMutexLocker lock(&m_mutex);
+    lastBatchMap(m_engineKind).insert(category, out);
     return true;
+}
+
+bool DetectionController::runBatchWithEngine(const QString& category, EngineKind kind,
+                                             BatchMetrics& out)
+{
+    const EngineKind prev = engineKind();
+    setEngineKind(kind);
+    const bool ok = runBatch(category, out);
+    setEngineKind(prev);
+    return ok;
+}
+
+const BatchMetrics* DetectionController::lastBatch(EngineKind kind, const QString& category) const
+{
+    QMutexLocker lock(&m_mutex);
+    const auto& map = lastBatchMap(kind);
+    auto it = map.constFind(category);
+    if (it == map.constEnd())
+        return nullptr;
+    return &it.value();
+}
+
+void DetectionController::prepareAndDetectAsync(const QString& category, const cv::Mat& image)
+{
+    const cv::Mat clone = image.clone();
+    QMutexLocker lock(&m_mutex);
+    ++m_detectGen;
+    const quint64 gen = m_detectGen;
+    if (m_busy) {
+        m_pendingDetect = PendingDetect{category, clone, gen};
+        return;
+    }
+    m_busy = true;
+    lock.unlock();
+    emit busyChanged(true);
+    startJob([this, category, clone, gen]() { runDetectJob(category, clone, gen); });
+}
+
+void DetectionController::runDetectJob(const QString& category, cv::Mat image, quint64 gen)
+{
+    emit progressChanged(0, 0, QStringLiteral("准备检测引擎…"));
+    IDetectionEngine* engine = engineFor(category);
+    DetectionResult result;
+    const bool ok = engine != nullptr;
+    if (ok) {
+        emit progressChanged(0, 0, QStringLiteral("正在推理当前图…"));
+        result = engine->detect(image);
+    }
+    if (m_abort.load())
+        return;
+    QPointer<DetectionController> self(this);
+    QMetaObject::invokeMethod(this, [self, ok, result, gen]() {
+        if (!self)
+            return;
+        bool stale = false;
+        {
+            QMutexLocker lock(&self->m_mutex);
+            stale = (gen != self->m_detectGen);
+        }
+        if (!stale)
+            emit self->currentDetectFinished(ok, result);
+        self->finishJobOnGui();
+    }, Qt::QueuedConnection);
+}
+
+void DetectionController::runBatchAsync(const QString& category)
+{
+    QMutexLocker lock(&m_mutex);
+    if (m_busy)
+        return;
+    m_busy = true;
+    lock.unlock();
+    emit busyChanged(true);
+    startJob([this, category]() {
+        BatchMetrics metrics;
+        const bool ok = !m_abort.load() && runBatch(category, metrics);
+        if (m_abort.load())
+            return;
+        QPointer<DetectionController> self(this);
+        QMetaObject::invokeMethod(this, [self, ok, category]() {
+            if (!self)
+                return;
+            emit self->batchFinished(ok, category);
+            self->finishJobOnGui();
+        }, Qt::QueuedConnection);
+    });
+}
+
+void DetectionController::compareAsync(const QString& category)
+{
+    QMutexLocker lock(&m_mutex);
+    if (m_busy)
+        return;
+    m_busy = true;
+    lock.unlock();
+    emit busyChanged(true);
+    startJob([this, category]() {
+        bool ok = true;
+        const EngineKind prev = engineKind();
+        const bool hasCv = lastBatch(EngineKind::Traditional, category) != nullptr;
+        const bool hasDl = lastBatch(EngineKind::DL, category) != nullptr;
+        if (!hasCv) {
+            emit progressChanged(0, 0, QStringLiteral("对比：运行传统 CV 批量…"));
+            BatchMetrics metrics;
+            ok = runBatchWithEngine(category, EngineKind::Traditional, metrics);
+        }
+        if (ok && !hasDl) {
+            emit progressChanged(0, 0, QStringLiteral("对比：运行 DL 批量…"));
+            BatchMetrics metrics;
+            ok = runBatchWithEngine(category, EngineKind::DL, metrics);
+        }
+        setEngineKind(prev);
+        if (m_abort.load())
+            return;
+        QPointer<DetectionController> self(this);
+        QMetaObject::invokeMethod(this, [self, ok, category]() {
+            if (!self)
+                return;
+            emit self->compareFinished(ok, category);
+            self->finishJobOnGui();
+        }, Qt::QueuedConnection);
+    });
+}
+
+void DetectionController::finishJobOnGui()
+{
+    PendingDetect pending;
+    bool hasPending = false;
+    {
+        QMutexLocker lock(&m_mutex);
+        if (m_pendingDetect) {
+            pending = std::move(*m_pendingDetect);
+            m_pendingDetect.reset();
+            hasPending = true;
+        } else {
+            m_busy = false;
+        }
+    }
+    if (hasPending) {
+        startJob([this, pending]() {
+            runDetectJob(pending.category, pending.image, pending.gen);
+        });
+        return;
+    }
+    emit busyChanged(false);
+    emit progressChanged(1, 1, QStringLiteral("就绪"));
 }

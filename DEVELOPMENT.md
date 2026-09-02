@@ -53,6 +53,8 @@ surface_defect_detector/
 │   ├── IDetectionEngine.h      # 检测引擎抽象接口 + DetectionResult 输出契约
 │   ├── DetectionEngine.h/.cpp  # 传统 CV 检测引擎（v0.1 基线，IDetectionEngine 实现）
 │   ├── DLDetectionEngine.h/.cpp # EfficientAD ONNX 推理（Phase 2）
+│   ├── EngineParams.h          # 传统/DL 可调参数默认值（P2 工作点）
+│   ├── ResultExporter.h/.cpp   # 标注图 + CSV 导出（Phase 3）
 │   ├── DatasetManager.h/.cpp   # 数据集加载：类别→缺陷类型→图片，配对 GT 掩码
 │   ├── ImageViewWidget.h/.cpp  # QGraphicsView 看图：缩放平移，GT/检测结果叠加
 │   └── ResultEvaluator.h/.cpp  # 像素级 P/R/F1/IoU + 图像级检出评估
@@ -65,6 +67,8 @@ surface_defect_detector/
 
 分层方向：`MainWindow → DetectionController → IDetectionEngine ← 具体引擎实现`，
 `DatasetManager` / `ResultEvaluator` 为无 UI 依赖的领域服务，由 Controller 使用。
+GUI 的引擎加载 / 标定 / 单张推理 / 批量走 DetectionController 工作线程，进度在窗口
+底部状态栏；`--batch` 仍同步，口径不变。
 
 ### 关键接口契约（迭代时保持兼容）
 
@@ -152,11 +156,17 @@ screw，160 张（v0.1 因无配准基本无效）：
 
 推理目前 CPU ONNX，整批约十几分钟。不继续在同一小模型上堆 step。
 
-### Phase 3 工程化（之后）
+### Phase 3 ✅ 工程化（已完成）
 
-- 检测参数/阈值在 GUI 可调并持久化（QSettings）
-- 检测结果导出（标注图 + CSV 报告）
-- 双引擎指标对比视图
+检测算法与 P2 工作点不变。GUI 改参写入 QSettings；`--batch` 不读设置，口径与上表一致。
+回归（收口时实测，与 P2 表相同）：metal_nut CV 图像级 58/115、F1 0.2926；DL 106/115、F1 0.2703；
+screw DL 120/160、F1 0.4782。
+
+- **参数**：右侧「检测参数」（CV：聚合阈值/闭运算核/面积门；DL：kσ/闭运算核/面积门），按引擎×类别持久化。恢复默认 = 该类别 P2 工作点。DL 的 k 在 detect 时现算（标定只存 mean/std），改 k 不重跑 train/good。
+- **导出**：当前图 PNG；批量 `images/<defect>/*.png` + `per_image.csv` + `summary.csv`（需先跑过该引擎该类别批量）。
+- **对比**：同一类别 CV vs DL 的 P/R/F1/图像级 + ΔF1；缺哪侧批量补跑哪侧。两类引擎分缓存。
+- **叠加**：红 = GT 标注（`ground_truth/`），绿 = 当前引擎检出；`good` 无红。
+- **GUI 线程**：加载 / 标定 / 单张 / 批量在工作线程，底部状态栏进度条。首次切 DL 要对全部 `train/good` 跑 ONNX 标定阈值（metal_nut 220 张、screw 320 张，约 1～2 分钟），不是训练；同进程再切走缓存。`--batch` 仍同步。
 
 ### Phase 4 产线对接（远期）
 

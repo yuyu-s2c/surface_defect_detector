@@ -149,6 +149,7 @@ static int runBatch(const QString& categoryArg, EngineKind engineKind)
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
+    QApplication::setOrganizationName(QStringLiteral("surface_defect_detector"));
     QApplication::setApplicationName(QStringLiteral("surface_defect_detector"));
 
     const QStringList args = QCoreApplication::arguments();

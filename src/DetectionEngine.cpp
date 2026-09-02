@@ -23,7 +23,12 @@ bool DetectionEngine::buildReference(const QStringList& goodImagePaths)
     cv::Mat sum, sumSq;
     cv::Size size;
     int n = 0;
+    const int total = goodImagePaths.size();
+    int i = 0;
     for (const QString& p : goodImagePaths) {
+        ++i;
+        if (!reportProgress(i, total))
+            return false;
         cv::Mat img = cv::imread(p.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
         if (img.empty())
             continue;

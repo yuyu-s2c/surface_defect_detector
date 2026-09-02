@@ -1,18 +1,19 @@
 # surface_defect_detector
 
-#### Description
-工业产品表面缺陷检测系统
+Desktop tool for industrial surface defect detection (Qt6 + OpenCV + EfficientAD ONNX).
 
-#### Software Architecture
-Software architecture description
+Status, architecture, build commands and measured metrics: [DEVELOPMENT.md](DEVELOPMENT.md).
+Agent conventions: [AGENTS.md](AGENTS.md). Training: [tools/training/TRAIN.md](tools/training/TRAIN.md).
 
-#### Installation
+Phases 1–3 are done (CV baseline / EfficientAD / engineering). Phase 4 (camera/PLC) is later.
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+```bash
+./build/surface_defect_detector.exe
+./build/surface_defect_detector.exe --batch metal_nut
+./build/surface_defect_detector.exe --batch metal_nut --engine dl
+```
 
-#### Instructions
+GUI overlay: red = ground-truth mask, green = detection. The first switch to DL calibrates on `train/good` (about 1–2 minutes); that is not training.
 
 1.  xxxx
 2.  xxxx
