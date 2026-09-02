@@ -1,12 +1,14 @@
-#include "MainWindow.h"
 #include "DetectionController.h"
+#include "MainViewModel.h"
 #include "ResultEvaluator.h"
 
-#include <QApplication>
 #include <QCoreApplication>
-#include <QFileDialog>
-#include <QFileInfo>
 #include <QDir>
+#include <QFileInfo>
+#include <QGuiApplication>
+#include <QQmlApplicationEngine>
+#include <QQmlContext>
+#include <QQuickStyle>
 #include <QTextStream>
 
 // 在可执行文件的上级/上上级目录中寻找数据集根（含 metal_nut、screw 等类别目录）
@@ -27,8 +29,6 @@ static int runBatch(const QString& categoryArg, EngineKind engineKind)
 {
     QTextStream out(stdout);
 
-    // 解析类别：优先当作已有类别目录（其上级即数据集根），
-    // 否则在自动发现的数据集根下按名字找
     QString datasetRoot;
     QString category;
     if (QFileInfo::exists(categoryArg) && QFileInfo(categoryArg).isDir()
@@ -76,7 +76,6 @@ static int runBatch(const QString& categoryArg, EngineKind engineKind)
     out << "参考模板已构建（train/good 共 "
         << dataset.trainGoodImages(category).size() << " 张）\n\n";
 
-    // 逐图日志由批量信号驱动，与编排逻辑解耦（GUI 侧用同一信号做界面响应）
     QObject::connect(&ctrl, &DetectionController::imageProcessed, &ctrl,
                      [&out](const QString& defect, const QString& imgPath,
                             const DetectionResult& r, const PixelMetrics& pm) {
@@ -134,7 +133,6 @@ static int runBatch(const QString& categoryArg, EngineKind engineKind)
                .arg(imageTotal.accuracy(), 0, 'f', 4)
                .arg(imageTotal.correct)
                .arg(imageTotal.total);
-    // good 类误报率 = good 中误报图片比例
     const ImageMetrics& goodIm = imageByDefect[QStringLiteral("good")];
     if (goodIm.total > 0) {
         out << QStringLiteral("good 误报率: %1 (%2/%3 张 good 图误报)\n")
@@ -146,24 +144,52 @@ static int runBatch(const QString& categoryArg, EngineKind engineKind)
     return 0;
 }
 
+static int runGui(int argc, char* argv[])
+{
+    QGuiApplication app(argc, argv);
+    QCoreApplication::setOrganizationName(QStringLiteral("surface_defect_detector"));
+    QCoreApplication::setApplicationName(QStringLiteral("surface_defect_detector"));
+    QQuickStyle::setStyle(QStringLiteral("Basic"));
+
+    auto* vm = new MainViewModel(&app);
+    const QString root = locateDatasetRoot();
+    if (!root.isEmpty())
+        vm->loadDatasetPath(root);
+
+    QQmlApplicationEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("app"), vm);
+    QObject::connect(
+        &engine, &QQmlApplicationEngine::objectCreationFailed,
+        &app, []() { QCoreApplication::exit(1); },
+        Qt::QueuedConnection);
+    engine.loadFromModule("SurfaceDefect", "Main");
+    if (engine.rootObjects().isEmpty()) {
+        QTextStream(stderr) << "ERROR: QML 加载失败（SurfaceDefect/Main）\n";
+        return 1;
+    }
+    return QGuiApplication::exec();
+}
+
 int main(int argc, char* argv[])
 {
-    QApplication app(argc, argv);
-    QApplication::setOrganizationName(QStringLiteral("surface_defect_detector"));
-    QApplication::setApplicationName(QStringLiteral("surface_defect_detector"));
+    // Q*Application 构造前只能从 argv 解析 --batch
+    QStringList raw;
+    for (int i = 0; i < argc; ++i)
+        raw << QString::fromLocal8Bit(argv[i]);
 
-    const QStringList args = QCoreApplication::arguments();
-    const int batchIdx = args.indexOf(QStringLiteral("--batch"));
+    const int batchIdx = raw.indexOf(QStringLiteral("--batch"));
     if (batchIdx >= 0) {
-        if (batchIdx + 1 >= args.size()) {
+        QCoreApplication core(argc, argv);
+        QCoreApplication::setOrganizationName(QStringLiteral("surface_defect_detector"));
+        QCoreApplication::setApplicationName(QStringLiteral("surface_defect_detector"));
+        if (batchIdx + 1 >= raw.size()) {
             QTextStream(stderr) << "用法: surface_defect_detector --batch <类别目录或类别名> [--engine cv|dl]\n";
             return 2;
         }
-        // 引擎选择：默认 cv（传统基线），dl = EfficientAD ONNX
         EngineKind engineKind = EngineKind::Traditional;
-        const int engineIdx = args.indexOf(QStringLiteral("--engine"));
-        if (engineIdx >= 0 && engineIdx + 1 < args.size()) {
-            const QString v = args.at(engineIdx + 1);
+        const int engineIdx = raw.indexOf(QStringLiteral("--engine"));
+        if (engineIdx >= 0 && engineIdx + 1 < raw.size()) {
+            const QString v = raw.at(engineIdx + 1);
             if (v == QStringLiteral("dl"))
                 engineKind = EngineKind::DL;
             else if (v != QStringLiteral("cv")) {
@@ -171,25 +197,8 @@ int main(int argc, char* argv[])
                 return 2;
             }
         }
-        // 批处理：跑完即退，不进入事件循环
-        return runBatch(args.at(batchIdx + 1), engineKind);
+        return runBatch(raw.at(batchIdx + 1), engineKind);
     }
 
-    // GUI 模式
-    QString root = locateDatasetRoot();
-    if (root.isEmpty()) {
-        root = QFileDialog::getExistingDirectory(
-            nullptr, QStringLiteral("请选择数据集根目录（含 metal_nut、screw 等类别目录）"),
-            QDir::currentPath());
-        if (root.isEmpty())
-            return 0;
-    }
-
-    MainWindow w;
-    if (!w.loadDataset(root)) {
-        QTextStream(stderr) << "数据集加载失败: " << root << "\n";
-        return 1;
-    }
-    w.show();
-    return QApplication::exec();
+    return runGui(argc, argv);
 }

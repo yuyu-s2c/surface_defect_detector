@@ -5,7 +5,7 @@
 
 ## 1. 项目概述
 
-工业产品表面缺陷检测桌面工具。Qt6 Widgets 桌面应用，离线图片批量检测，
+工业产品表面缺陷检测桌面工具。Qt6 Quick（QML + MVVM）桌面应用，离线图片批量检测，
 缺陷区域可视化叠加，并与 ground truth 对比输出评估指标。
 
 - 数据集：MVTec AD（metal_nut、screw，700×700 PNG）。无监督设定——`train/` 只有良品图，
@@ -46,17 +46,19 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
 ```
 surface_defect_detector/
 ├── CMakeLists.txt
+├── qml/                      # View：暗色质检台（顶栏 / 左树 / 中画布 / 右 Tab）
 ├── src/
-│   ├── main.cpp                # 入口；--batch 批处理模式（自动化验证用）
-│   ├── MainWindow.h/.cpp       # 主窗口（纯视图层）：左数据集树 / 中查看器 / 右结果面板
+│   ├── main.cpp                # 入口；--batch 走 QCoreApplication，GUI 走 QGuiApplication
+│   ├── viewmodels/             # ViewModel：MainViewModel + 树/框/指标/对比模型
+│   ├── items/InspectionCanvas  # QQuickPaintedItem 看图：缩放平移，GT/检测叠加
 │   ├── DetectionController.h/.cpp # 应用服务层：数据集 + 引擎缓存 + 批量编排（GUI/CLI 共用）
 │   ├── IDetectionEngine.h      # 检测引擎抽象接口 + DetectionResult 输出契约
 │   ├── DetectionEngine.h/.cpp  # 传统 CV 检测引擎（v0.1 基线，IDetectionEngine 实现）
 │   ├── DLDetectionEngine.h/.cpp # EfficientAD ONNX 推理（Phase 2）
 │   ├── EngineParams.h          # 传统/DL 可调参数默认值（P2 工作点）
+│   ├── OverlayColors.h         # GT 红 / 检测绿（画布与导出共用）
 │   ├── ResultExporter.h/.cpp   # 标注图 + CSV 导出（Phase 3）
 │   ├── DatasetManager.h/.cpp   # 数据集加载：类别→缺陷类型→图片，配对 GT 掩码
-│   ├── ImageViewWidget.h/.cpp  # QGraphicsView 看图：缩放平移，GT/检测结果叠加
 │   └── ResultEvaluator.h/.cpp  # 像素级 P/R/F1/IoU + 图像级检出评估
 ├── tools/training/           # Python 训练侧（anomalib / EfficientAD）
 ├── models/                   # ONNX / ckpt（gitignore，不入库）
@@ -65,10 +67,10 @@ surface_defect_detector/
 └── build/                    # 构建产物（gitignore）
 ```
 
-分层方向：`MainWindow → DetectionController → IDetectionEngine ← 具体引擎实现`，
+分层：`QML View → MainViewModel → DetectionController → IDetectionEngine`。
 `DatasetManager` / `ResultEvaluator` 为无 UI 依赖的领域服务，由 Controller 使用。
-GUI 的引擎加载 / 标定 / 单张推理 / 批量走 DetectionController 工作线程，进度在窗口
-底部状态栏；`--batch` 仍同步，口径不变。
+QML 不接触 `cv::Mat` 与引擎实例。GUI 的引擎加载 / 标定 / 单张推理 / 批量走
+DetectionController 工作线程，进度在画布蒙层与底栏；`--batch` 仍同步，口径不变。
 
 ### 关键接口契约（迭代时保持兼容）
 
@@ -78,7 +80,7 @@ GUI 的引擎加载 / 标定 / 单张推理 / 批量走 DetectionController 工�
 - `std::vector<cv::Rect> boxes` / `std::vector<double> areas`：缺陷框与面积
 - `bool detected()`：图像级检出判定（`totalArea >= minImageArea`；DL/传统由引擎写入面积门）
 
-后续深度学习引擎只要实现该接口产出同一结构，UI、编排、评估器、批处理模式均无需改动。
+后续深度学习引擎只要实现该接口产出同一结构，ViewModel、编排、评估器、批处理模式均无需改动。
 
 ## 4. 阶段规划与状态
 
@@ -168,6 +170,16 @@ screw DL 120/160、F1 0.4782。
 - **叠加**：红 = GT 标注（`ground_truth/`），绿 = 当前引擎检出；`good` 无红。
 - **GUI 线程**：加载 / 标定 / 单张 / 批量在工作线程，底部状态栏进度条。切 DL 时若模型旁没有有效 `.calib.json`，才对全部 `train/good` 跑 ONNX 标定阈值（metal_nut 220 张、screw 320 张，约 1～2 分钟，不是训练），结果写到 `models/<类>/weights/onnx/<类>.calib.json`；模型或良品图指纹未变则下次启动跳过该循环。同进程再切走内存缓存。`--batch` 仍同步，共用该文件缓存。
 
+### Phase 3.5 ✅ QML + MVVM 界面重做
+
+Widgets `MainWindow` / `ImageViewWidget` 已删除。GUI 改为 Qt Quick：自定义暗色设计系统、
+顶栏引擎分段开关与主操作、画布为视觉中心（判定徽章 / 浮层 GT·检测开关）、右侧 Tab
+（当前 / 参数 / 指标 / 对比）。算法、P2 工作点、`--batch` 口径不变。
+回归：`--batch metal_nut` 仍为图像级 58/115、F1 0.2926。
+
+左栏数据集用官方 `TreeView` + `TreeViewDelegate`，选中走 `ItemSelectionModel`（不要手搓
+点击与缩进）。看图是项目特有叠加，用 `InspectionCanvas`（QQuickPaintedItem）。
+
 ### Phase 4 产线对接（远期）
 
 - 接海康 MVS / MVD 相机 SDK 实时取流检测（本机已装运行时）
@@ -178,5 +190,6 @@ screw DL 120/160、F1 0.4782。
 - 提交规范：参考 README 参与贡献节（Feat_xxx 分支 + PR）
 - 不入库的内容：`third_party/`、`build*/`、`models/`、数据集目录不动
 - 检测引擎接口（IDetectionEngine / DetectionResult 契约）变更需同步改
-  DetectionController、ResultEvaluator、batch 模式三处
+  DetectionController、ResultEvaluator、main.cpp 批处理、MainViewModel 四处
+- 优先用 Qt / OpenCV / 已接入的成熟库，不要手搓官方已有的控件与交互（详见 AGENTS.md）
 - 每阶段完成：更新本文档状态表与实测指标；跑通两个类别的 `--batch` 无崩溃

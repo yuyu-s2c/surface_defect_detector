@@ -22,7 +22,7 @@ struct DetectionResult
 };
 
 // 检测引擎抽象接口。Phase 2 的深度学习引擎（EfficientAD）实现同一接口即可接入，
-// UI（MainWindow）、编排（DetectionController）、评估（ResultEvaluator）均无需改动。
+// ViewModel、编排（DetectionController）、评估（ResultEvaluator）均无需改动。
 class IDetectionEngine
 {
 public:

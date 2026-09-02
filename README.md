@@ -1,11 +1,11 @@
 # surface_defect_detector
 
-工业产品表面缺陷检测桌面工具（Qt6 + OpenCV + EfficientAD ONNX）。
+工业产品表面缺陷检测桌面工具（Qt6 Quick / QML + OpenCV + EfficientAD ONNX）。
 
 阶段状态、架构、构建命令和实测指标见 [DEVELOPMENT.md](DEVELOPMENT.md)。
 给 AI 代理的约定见 [AGENTS.md](AGENTS.md)。训练见 [tools/training/TRAIN.md](tools/training/TRAIN.md)。
 
-当前进度：Phase 1～3 已完成（传统基线 / EfficientAD / 工程化），Phase 4 产线对接为远期。
+当前进度：Phase 1～3.5 已完成（传统基线 / EfficientAD / 工程化 / QML MVVM），Phase 4 产线对接为远期。
 
 ```bash
 # GUI
@@ -16,7 +16,7 @@
 ./build/surface_defect_detector.exe --batch metal_nut --engine dl
 ```
 
-GUI：红=GT 标注，绿=检测结果。切深度学习时若尚无标定缓存，会跑一遍 `train/good`（约 1～2 分钟，不是训练）；之后启动复用模型旁的 `.calib.json`。
+GUI 为暗色质检台（QML）：红=GT 标注，绿=检测结果。切深度学习时若尚无标定缓存，会跑一遍 `train/good`（约 1～2 分钟，不是训练）；之后启动复用模型旁的 `.calib.json`。`--batch` 仍是无窗口 CLI，口径不变。
 
 #### 参与贡献
 

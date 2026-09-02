@@ -39,7 +39,7 @@ struct BatchMetrics
 };
 
 // 应用服务层：数据集 + 引擎生命周期 + 检测编排。
-// GUI（MainWindow）与 CLI（main.cpp --batch）共用同一份编排逻辑，避免两处重复。
+// GUI（MainViewModel）与 CLI（main.cpp --batch）共用同一份编排逻辑，避免两处重复。
 //
 // 同步 API（prepareEngine / detect / runBatch）供 CLI 使用，跑完再退。
 // GUI 走 *Async：工作线程做 ONNX 加载/标定/推理，进度信号回主线程，避免切 DL 卡死。

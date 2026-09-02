@@ -9,7 +9,7 @@
 #include <vector>
 
 // 检测结果导出（Phase 3）：叠图与 CSV，无 UI 依赖。
-// 配色与 ImageViewWidget 一致：GT 红半透明、检测绿半透明 + 绿框。
+// 配色与 InspectionCanvas / OverlayColors 一致：GT 红半透明、检测绿半透明 + 绿框。
 class ResultExporter
 {
 public:

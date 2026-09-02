@@ -1,4 +1,5 @@
 #include "ResultExporter.h"
+#include "OverlayColors.h"
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -58,11 +59,10 @@ cv::Mat ResultExporter::composeAnnotated(const cv::Mat& bgr,
     else
         out = bgr.clone();
 
-    // alpha 约等于查看器里 110/255、90/255
-    blendMask(out, gtMask, cv::Scalar(0, 0, 255), 0.43);
-    blendMask(out, detMask, cv::Scalar(0, 220, 0), 0.35);
+    blendMask(out, gtMask, OverlayColors::gtBgr(), OverlayColors::gtBlend);
+    blendMask(out, detMask, OverlayColors::detBgr(), OverlayColors::detBlend);
     for (const cv::Rect& r : boxes)
-        cv::rectangle(out, r, cv::Scalar(0, 255, 0), 2);
+        cv::rectangle(out, r, OverlayColors::detBoxBgr(), 2);
     return out;
 }
 

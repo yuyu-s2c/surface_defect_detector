@@ -1,11 +1,11 @@
 # surface_defect_detector
 
-Desktop tool for industrial surface defect detection (Qt6 + OpenCV + EfficientAD ONNX).
+Desktop tool for industrial surface defect detection (Qt6 Quick / QML + OpenCV + EfficientAD ONNX).
 
 Status, architecture, build commands and measured metrics: [DEVELOPMENT.md](DEVELOPMENT.md).
 Agent conventions: [AGENTS.md](AGENTS.md). Training: [tools/training/TRAIN.md](tools/training/TRAIN.md).
 
-Phases 1–3 are done (CV baseline / EfficientAD / engineering). Phase 4 (camera/PLC) is later.
+Phases 1–3.5 are done (CV baseline / EfficientAD / engineering / QML MVVM). Phase 4 (camera/PLC) is later.
 
 ```bash
 ./build/surface_defect_detector.exe

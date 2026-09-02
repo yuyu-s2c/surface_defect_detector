@@ -1,0 +1,58 @@
+import QtQuick
+
+Rectangle {
+    id: root
+    property string statusText: "就绪"
+    property bool busy: false
+    property int current: 0
+    property int total: 0
+
+    color: Theme.bgPanel
+    height: 32
+
+    Rectangle {
+        anchors.top: parent.top
+        width: parent.width
+        height: 1
+        color: Theme.border
+    }
+
+    Text {
+        anchors.left: parent.left
+        anchors.leftMargin: 14
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.right: bar.left
+        anchors.rightMargin: 12
+        text: root.statusText
+        color: Theme.textSecondary
+        font.pixelSize: Theme.smallSize
+        font.family: Theme.fontFamily
+        elide: Text.ElideRight
+    }
+
+    Rectangle {
+        id: bar
+        visible: root.busy
+        anchors.right: parent.right
+        anchors.rightMargin: 14
+        anchors.verticalCenter: parent.verticalCenter
+        width: 180
+        height: 6
+        radius: 3
+        color: Theme.bgElevated
+
+        Rectangle {
+            id: fill
+            height: parent.height
+            radius: 3
+            color: Theme.accent
+            width: root.total > 0 ? parent.width * Math.min(1, root.current / root.total) : parent.width * 0.35
+
+            SequentialAnimation on x {
+                running: root.busy && root.total <= 0
+                loops: Animation.Infinite
+                NumberAnimation { from: -40; to: 140; duration: 900 }
+            }
+        }
+    }
+}
