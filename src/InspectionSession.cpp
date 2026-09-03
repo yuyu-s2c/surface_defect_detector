@@ -28,7 +28,8 @@ void InspectionSession::setRejectSink(std::unique_ptr<IRejectSink> sink)
 }
 
 void InspectionSession::setSessionMeta(const QString& sessionId, const QString& sessionDir,
-                                      const QString& engineName, const QString& provider)
+                                      const QString& engineName, const QString& provider,
+                                      const QString& workOrder, const QString& operatorName)
 {
     if (m_running.load())
         return;
@@ -36,6 +37,15 @@ void InspectionSession::setSessionMeta(const QString& sessionId, const QString& 
     m_sessionDir = sessionDir;
     m_engineName = engineName;
     m_provider = provider;
+    m_workOrder = workOrder;
+    m_operatorName = operatorName;
+}
+
+void InspectionSession::setConsecutiveNgLimit(int n)
+{
+    if (m_running.load())
+        return;
+    m_consecutiveNgLimit = qMax(0, n);
 }
 
 bool InspectionSession::start(std::unique_ptr<IFrameSource> source, const QString& category)
@@ -58,6 +68,8 @@ bool InspectionSession::start(std::unique_ptr<IFrameSource> source, const QStrin
     m_late = 0;
     m_maxQueue = 0;
     m_maxLatencyMs = 0;
+    m_consecutiveNg = 0;
+    m_stopReason.clear();
     m_dropped.store(0);
     m_queue.clear();
     m_doneNs.clear();
@@ -67,6 +79,7 @@ bool InspectionSession::start(std::unique_ptr<IFrameSource> source, const QStrin
     m_abort.store(false);
     m_sourceFinished.store(false);
     m_stopping.store(false);
+    m_interlock.store(false);
     m_startedNs = steadyNowNs();
     const quint64 gen = ++m_sessionGen;
 
@@ -220,8 +233,12 @@ void InspectionSession::detectLoop(quint64 gen)
         {
             QMutexLocker lock(&m_mutex);
             ++m_done;
-            if (result.detected())
+            if (result.detected()) {
                 ++m_ng;
+                ++m_consecutiveNg;
+            } else {
+                m_consecutiveNg = 0;
+            }
             if (late)
                 ++m_late;
             m_maxQueue = qMax(m_maxQueue, depth);
@@ -233,6 +250,8 @@ void InspectionSession::detectLoop(quint64 gen)
             out.actualFps = actualFpsLocked();
             out.done = m_done;
             out.lateCount = m_late;
+            out.consecutiveNg = m_consecutiveNg;
+            out.consecutiveNgLimit = m_consecutiveNgLimit;
 
             LivePieceRecord rec;
             rec.category = m_category;
@@ -257,7 +276,21 @@ void InspectionSession::detectLoop(quint64 gen)
             m_reject->reject(ctx);
         }
 
-        if (m_abort.load())
+        // 联锁停线：打断取帧，但仍发出本帧并 flush 班次（与用户点停止区分）
+        const bool trip = (m_consecutiveNgLimit > 0 && m_consecutiveNg >= m_consecutiveNgLimit
+                           && result.detected());
+        if (trip) {
+            m_stopReason = QStringLiteral("连续不合格联锁（%1 张）").arg(m_consecutiveNgLimit);
+            m_interlock.store(true);
+            out.interlockStop = true;
+            m_abort.store(true);
+            if (m_source)
+                m_source->stop();
+            m_frameCond.wakeAll();
+            m_spaceCond.wakeAll();
+        }
+
+        if (m_abort.load() && !m_interlock.load())
             break;
 
         QPointer<InspectionSession> self(this);
@@ -265,6 +298,9 @@ void InspectionSession::detectLoop(quint64 gen)
             if (self && self->m_sessionGen.load() == gen)
                 emit self->frameInspected(out);
         }, Qt::QueuedConnection);
+
+        if (trip)
+            break;
     }
 
     {
@@ -273,7 +309,7 @@ void InspectionSession::detectLoop(quint64 gen)
         m_lastPieces = m_pieces;
     }
 
-    if (!m_abort.load() && !m_stopping.load()) {
+    if ((!m_abort.load() || m_interlock.load()) && !m_stopping.load()) {
         const int done = m_done;
         const int ng = m_ng;
         QPointer<InspectionSession> self(this);
@@ -297,6 +333,11 @@ void InspectionSession::flushSessionLogLocked()
     s.category = m_category;
     s.engineName = m_engineName;
     s.provider = m_provider;
+    s.workOrder = m_workOrder;
+    s.operatorName = m_operatorName;
+    s.stopReason = m_interlock.load() ? m_stopReason : QString();
+    s.consecutiveNgLimit = m_consecutiveNgLimit;
+    s.consecutiveNg = m_consecutiveNg;
     s.targetFps = m_targetFps;
     s.done = m_done;
     s.planned = m_total;

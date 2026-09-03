@@ -203,7 +203,15 @@ bool ResultExporter::exportLiveSession(const QString& dir,
     QTextStream sum(&sumFile);
     sum.setEncoding(QStringConverter::Utf8);
     sum << QStringLiteral("session_id,category,engine,provider,target_fps,effective_fps,"
-                          "elapsed_s,ok,ng,dropped,late_eject,max_queue,max_latency_ms,planned,done\n");
+                          "elapsed_s,ok,ng,dropped,late_eject,max_queue,max_latency_ms,planned,done,"
+                          "work_order,operator,stop_reason,consecutive_ng_limit,consecutive_ng\n");
+    auto csvCell = [](QString s) {
+        // 工单/操作员是自由文本，避免把 summary.csv 列冲乱；--batch CSV 不动
+        s.replace(QLatin1Char('"'), QLatin1Char('\''));
+        s.replace(QLatin1Char(','), QLatin1Char(' '));
+        s.replace(QLatin1Char('\n'), QLatin1Char(' '));
+        return s;
+    };
     sum << summary.sessionId << ','
         << summary.category << ','
         << summary.engineName << ','
@@ -218,7 +226,12 @@ bool ResultExporter::exportLiveSession(const QString& dir,
         << summary.maxQueue << ','
         << summary.maxLatencyMs << ','
         << summary.planned << ','
-        << summary.done << '\n';
+        << summary.done << ','
+        << csvCell(summary.workOrder) << ','
+        << csvCell(summary.operatorName) << ','
+        << csvCell(summary.stopReason) << ','
+        << summary.consecutiveNgLimit << ','
+        << summary.consecutiveNg << '\n';
     sumFile.close();
 
     QFile perFile(outDir.filePath(QStringLiteral("session.csv")));

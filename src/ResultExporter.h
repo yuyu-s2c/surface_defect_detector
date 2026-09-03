@@ -33,6 +33,7 @@ public:
                             const BatchMetrics& metrics);
 
     // 取流班次：session.csv（每张含 OK）+ summary.csv。目录不存在则创建。
+    // summary 末尾追加工单/联锁列，不改 --batch CSV。
     static bool exportLiveSession(const QString& dir,
                                   const LiveSessionSummary& summary,
                                   const QVector<LivePieceRecord>& pieces);

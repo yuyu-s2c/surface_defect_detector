@@ -7,7 +7,25 @@ Agent conventions: [AGENTS.md](AGENTS.md). Training: [tools/training/TRAIN.md](t
 
 Phases 1–3.7 are done (DirectML, image-level score, zero-code new-category onboarding,
 simulated folder streaming, shift/reject archive, inspect/analyze layout).
-Phase 4 (camera/PLC) waits on hardware; swap in `CameraSource` and add an `IRejectSink`.
+An offline station loop was added on top (pre-run self-check, simulated PLC/DO point table,
+takt/yield, consecutive-NG interlock). Phase 4 (camera/PLC) waits on hardware: swap in
+`CameraSource` and add a real-DO `IRejectSink`. **The camera stays offline; do not fake a live feed.**
+
+## 5-minute demo with no camera
+
+On the Windows machine, with the repo root as the dataset root (`metal_nut/` present).
+ONNX under `models/metal_nut/...` is optional (traditional CV works without it).
+
+1. Run `./build/surface_defect_detector.exe` and open the dataset root.
+2. Stay in **Inspect** mode, select `metal_nut`.
+3. The header must show **camera offline / FolderSource simulation / simulated PLC·DO0.0**.
+4. Fill a work order (default `WO-YYYYMMDD`). Consecutive-NG limit defaults to 8.
+5. Click **模拟开线** (or Space) → self-check → confirm. `CameraSource` is not started.
+6. Watch OK/NG, yield, takt, the consecutive-NG bar, and DO0.0 pulses. After 8 consecutive NG the line **interlocks**.
+7. Open `_sessions/<shift>/`: `session.csv`, `rejects.csv`, `do_map.csv`, `do_pulses.csv`.
+8. To run a full category: set consecutive NG to **0** (same as `--live-smoke`).
+
+Phase 4 is still only: implement `CameraSource` (`overflowPolicy()` already returns drop-oldest) and add a real DO sink to `CompositeRejectSink`. Do not turn `SimulatedDoSink` into a fieldbus.
 
 ```bash
 ./build/surface_defect_detector.exe
@@ -19,11 +37,10 @@ Phase 4 (camera/PLC) waits on hardware; swap in `CameraSource` and add an `IReje
 ```
 
 GUI overlay: red = ground-truth mask, green = detection. Header switches Inspect / Analyze;
-the inspect rail shows OK/NG and the shift reject list. Streaming plays `test/` at a set FPS
-(folder source); rejects log `[DO] REJECT` and write `_sessions/` (annotated PNGs + CSV).
-DL defaults to DirectML (CPU fallback).
-Switching to DL calibrates on `train/good` once per execution provider (DirectML is tens of seconds; that is not training) and writes `<model>.calib.json` (v3, keyed by EP) next to the ONNX file.
-`--batch` image-level defaults to score-over-threshold and still prints the area-gate column for comparison; it does not read GUI settings. `--provider cpu|dml|auto`. `--overflow block|drop` only affects the live queue (Folder defaults to block so a category finishes without dropping images).
+the inspect rail shows OK/NG, yield/takt and the shift reject / simulated DO list.
+Streaming plays `test/` at a set FPS (folder source); rejects log `[DO] REJECT` / `[PLC-SIM]`
+and write `_sessions/`. `--batch` does not read GUI settings, work orders, or the interlock.
+`--live-smoke` keeps consecutive-NG interlock off so a category finishes.
 
 New category, no code change: drop `<cat>/train/good` and `<cat>/test/...` at the dataset root;
 for DL also place `models/<cat>/weights/onnx/<cat>.onnx` (calibration needs at least 3 good images).

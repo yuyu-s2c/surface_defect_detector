@@ -5,7 +5,7 @@ import QtQuick.Layouts
 Rectangle {
     id: root
     color: Theme.bgPanel
-    height: 48
+    height: 76
 
     signal exportCurrentClicked()
     signal exportBatchClicked()
@@ -20,89 +20,100 @@ Rectangle {
         color: Theme.border
     }
 
-    RowLayout {
+    Column {
         anchors.fill: parent
-        anchors.leftMargin: 12
-        anchors.rightMargin: 10
-        anchors.topMargin: 6
-        anchors.bottomMargin: 6
-        spacing: 8
+        spacing: 0
 
-        Text {
-            text: "表面缺陷检测"
-            color: Theme.textPrimary
-            font.pixelSize: Theme.titleSize
-            font.bold: true
-            font.family: Theme.fontFamily
-            Layout.alignment: Qt.AlignVCenter
-        }
+        RowLayout {
+            width: parent.width
+            height: 48
+            spacing: 8
 
-        ModeSwitch {
-            workMode: app.workMode
-            enabled: !app.liveRunning && !app.busy
-            opacity: enabled ? 1 : 0.5
-            onPicked: (m) => app.workMode = m
-        }
+            Item { width: 12 }
 
-        Item { Layout.fillWidth: true }
-
-        EngineSwitch {
-            engineKind: app.engineKind
-            implicitWidth: 200
-            enabled: !app.busy && !app.liveRunning
-            opacity: enabled ? 1 : 0.5
-            onPicked: (k) => app.engineKind = k
-        }
-
-        Rectangle {
-            visible: app.currentCategory.length > 0
-            implicitHeight: 26
-            implicitWidth: catText.width + 16
-            radius: 13
-            color: Theme.bgElevated
-            border.color: Theme.border
             Text {
-                id: catText
-                anchors.centerIn: parent
-                text: app.currentCategoryLabel
-                color: Theme.textSecondary
-                font.pixelSize: Theme.smallSize
+                text: "表面缺陷检测"
+                color: Theme.textPrimary
+                font.pixelSize: Theme.titleSize
+                font.bold: true
                 font.family: Theme.fontFamily
+                Layout.alignment: Qt.AlignVCenter
             }
-        }
 
-        Row {
-            spacing: 6
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: "帧率"
-                color: Theme.textSecondary
-                font.pixelSize: Theme.smallSize
-                font.family: Theme.fontFamily
-            }
-            AppSpinBox {
-                from: 1
-                to: 15
-                value: app.liveTargetFps
+            ModeSwitch {
+                workMode: app.workMode
                 enabled: !app.liveRunning && !app.busy
-                implicitWidth: 78
-                onValueModified: app.liveTargetFps = value
+                opacity: enabled ? 1 : 0.5
+                onPicked: (m) => app.workMode = m
             }
+
+            Item { Layout.fillWidth: true }
+
+            EngineSwitch {
+                engineKind: app.engineKind
+                implicitWidth: 200
+                enabled: !app.busy && !app.liveRunning
+                opacity: enabled ? 1 : 0.5
+                onPicked: (k) => app.engineKind = k
+            }
+
+            Rectangle {
+                visible: app.currentCategory.length > 0
+                implicitHeight: 26
+                implicitWidth: catText.width + 16
+                radius: 13
+                color: Theme.bgElevated
+                border.color: Theme.border
+                Text {
+                    id: catText
+                    anchors.centerIn: parent
+                    text: app.currentCategoryLabel
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.smallSize
+                    font.family: Theme.fontFamily
+                }
+            }
+
+            Row {
+                spacing: 6
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "帧率"
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.smallSize
+                    font.family: Theme.fontFamily
+                }
+                AppSpinBox {
+                    from: 1
+                    to: 15
+                    value: app.liveTargetFps
+                    enabled: !app.liveRunning && !app.busy
+                    implicitWidth: 78
+                    onValueModified: app.liveTargetFps = value
+                }
+                AppButton {
+                    text: app.liveRunning ? "停止" : "模拟开线"
+                    primary: !app.liveRunning
+                    highlight: app.liveRunning
+                    enabled: app.liveRunning || app.canStartLive
+                    onClicked: app.liveRunning ? app.stopLive() : app.requestStartLive()
+                }
+            }
+
             AppButton {
-                text: app.liveRunning ? "停止取流" : "开始取流"
-                primary: !app.liveRunning
-                highlight: app.liveRunning
-                enabled: app.liveRunning || app.canStartLive
-                onClicked: app.liveRunning ? app.stopLive() : app.startLive()
+                id: moreBtn
+                text: "更多"
+                outlined: true
+                active: morePopup.opened
+                onClicked: morePopup.opened ? morePopup.close() : morePopup.open()
             }
+
+            Item { width: 10 }
         }
 
-        AppButton {
-            id: moreBtn
-            text: "更多"
-            outlined: true
-            active: morePopup.opened
-            onClicked: morePopup.opened ? morePopup.close() : morePopup.open()
+        StationIdentityBar {
+            width: parent.width
+            height: 28
         }
     }
 

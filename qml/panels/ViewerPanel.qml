@@ -33,21 +33,21 @@ Rectangle {
         visible: !app.hasImage && !app.busy && !app.liveRunning && app.stationAlert.length === 0
         title: app.hasDataset ? "从左侧选择一张测试图" : "先打开数据集根目录"
         subtitle: app.hasDataset
-                  ? "滚轮缩放，左键拖拽平移。绿 = 检出位置。空格开始模拟取流。"
+                  ? "滚轮缩放，左键拖拽平移。绿 = 检出位置。空格开线自检（模拟取流，相机离线）。"
                   : "顶栏「更多」或 Ctrl+O。目录里放各类的 train/good 与 test/。"
     }
 
     StationBanner {
         id: banner
-        visible: !app.liveRunning && app.stationAlert.length > 0
+        visible: app.liveInterlocked || (!app.liveRunning && app.stationAlert.length > 0)
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: 12
         anchors.topMargin: app.hasImage ? 48 : 12
-        message: app.stationAlert
-        isError: app.stationAlertIsError
-        pathHint: (app.engineKind === 1 && app.expectedOnnxPath.length > 0) ? app.expectedOnnxPath : ""
+        message: app.liveInterlocked ? app.liveStopReason : app.stationAlert
+        isError: app.liveInterlocked ? true : app.stationAlertIsError
+        pathHint: (!app.liveInterlocked && app.engineKind === 1 && app.expectedOnnxPath.length > 0) ? app.expectedOnnxPath : ""
     }
 
     OverlayChipBar {

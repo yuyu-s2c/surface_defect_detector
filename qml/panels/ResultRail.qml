@@ -86,6 +86,71 @@ Rectangle {
                 implicitHeight: 40
             }
 
+            ColumnLayout {
+                visible: !app.liveRunning
+                Layout.fillWidth: true
+                spacing: 6
+                Text {
+                    text: "配方"
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.smallSize
+                    font.family: Theme.fontFamily
+                }
+                AppTextField {
+                    Layout.fillWidth: true
+                    text: app.workOrder
+                    placeholderText: "工单号"
+                    enabled: !app.busy
+                    onEditingFinished: app.workOrder = text
+                }
+                AppTextField {
+                    Layout.fillWidth: true
+                    text: app.operatorName
+                    placeholderText: "操作员"
+                    enabled: !app.busy
+                    onEditingFinished: app.operatorName = text
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+                    Text {
+                        text: "连续 NG"
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.smallSize
+                        font.family: Theme.fontFamily
+                    }
+                    AppSpinBox {
+                        Layout.fillWidth: true
+                        from: 0
+                        to: 200
+                        value: app.consecutiveNgLimit
+                        enabled: !app.busy
+                        onValueModified: app.consecutiveNgLimit = value
+                    }
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: app.consecutiveNgLimit > 0
+                          ? ("达 " + app.consecutiveNgLimit + " 张连续不合格停线；0 关闭")
+                          : "联锁关闭，将跑完模拟 playlist"
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.family: Theme.fontFamily
+                    wrapMode: Text.WordWrap
+                }
+            }
+            Text {
+                visible: app.liveRunning
+                Layout.fillWidth: true
+                text: (app.workOrder.length > 0 ? ("工单 " + app.workOrder + "  ·  ") : "")
+                      + "连续 NG " + app.liveConsecutiveNg
+                      + (app.consecutiveNgLimit > 0 ? (" / " + app.consecutiveNgLimit) : "（关）")
+                color: Theme.textSecondary
+                font.pixelSize: Theme.smallSize
+                font.family: Theme.monoFamily
+                wrapMode: Text.WordWrap
+            }
+
             Text {
                 visible: app.hasImage
                 Layout.fillWidth: true
@@ -122,15 +187,69 @@ Rectangle {
                 font.bold: true
                 elide: Text.ElideRight
             }
+            Text {
+                visible: app.liveInterlocked
+                Layout.fillWidth: true
+                text: app.liveStopReason
+                color: Theme.danger
+                font.pixelSize: Theme.smallSize
+                font.family: Theme.fontFamily
+                wrapMode: Text.WordWrap
+            }
+            GridLayout {
+                Layout.fillWidth: true
+                columns: 2
+                columnSpacing: 8
+                rowSpacing: 8
+                StatTile {
+                    Layout.fillWidth: true
+                    label: "合格"
+                    value: String(app.liveOkCount)
+                }
+                StatTile {
+                    Layout.fillWidth: true
+                    label: "不合格"
+                    value: String(app.liveNgCount)
+                }
+                StatTile {
+                    Layout.fillWidth: true
+                    label: "直通率"
+                    value: Number(app.liveYieldPercent).toFixed(1) + "%"
+                }
+                StatTile {
+                    Layout.fillWidth: true
+                    label: "节拍"
+                    value: app.liveTaktMs > 0 ? (app.liveTaktMs + " ms") : "—"
+                }
+            }
+            Text {
+                Layout.fillWidth: true
+                text: app.consecutiveNgLimit > 0
+                      ? ("连续不合格  " + app.liveConsecutiveNg + " / " + app.consecutiveNgLimit)
+                      : ("连续不合格  " + app.liveConsecutiveNg + "（联锁关）")
+                color: (app.consecutiveNgLimit > 0 && app.liveConsecutiveNg >= app.consecutiveNgLimit)
+                       ? Theme.danger : Theme.textSecondary
+                font.pixelSize: Theme.smallSize
+                font.family: Theme.monoFamily
+            }
+            Rectangle {
+                visible: app.consecutiveNgLimit > 0
+                Layout.fillWidth: true
+                implicitHeight: 6
+                radius: 3
+                color: Theme.bgElevated
+                Rectangle {
+                    height: parent.height
+                    radius: 3
+                    width: parent.width * Math.min(1, app.liveConsecutiveNg / Math.max(app.consecutiveNgLimit, 1))
+                    color: Theme.danger
+                }
+            }
             GridLayout {
                 Layout.fillWidth: true
                 columns: 2
                 columnSpacing: 8
                 rowSpacing: 4
-                Text { text: "合格"; color: Theme.accent; font.pixelSize: Theme.smallSize; font.family: Theme.fontFamily }
-                Text { text: String(app.liveOkCount); color: Theme.textPrimary; font.pixelSize: Theme.smallSize; font.family: Theme.monoFamily; font.bold: true }
-                Text { text: "不合格"; color: Theme.danger; font.pixelSize: Theme.smallSize; font.family: Theme.fontFamily }
-                Text { text: String(app.liveNgCount); color: Theme.textPrimary; font.pixelSize: Theme.smallSize; font.family: Theme.monoFamily; font.bold: true }
                 Text { text: "丢帧"; color: Theme.textSecondary; font.pixelSize: Theme.smallSize; font.family: Theme.fontFamily }
                 Text { text: String(app.liveDroppedCount); color: Theme.textPrimary; font.pixelSize: Theme.smallSize; font.family: Theme.monoFamily }
                 Text { text: "迟剔除"; color: Theme.textSecondary; font.pixelSize: Theme.smallSize; font.family: Theme.fontFamily }
@@ -148,6 +267,55 @@ Rectangle {
                     color: Theme.textPrimary
                     font.pixelSize: Theme.smallSize
                     font.family: Theme.monoFamily
+                }
+            }
+
+            Text {
+                visible: app.doPulseModel.count > 0
+                text: "模拟 DO 脉冲"
+                color: Theme.textSecondary
+                font.pixelSize: Theme.smallSize
+                font.family: Theme.fontFamily
+            }
+            ListView {
+                visible: app.doPulseModel.count > 0
+                Layout.fillWidth: true
+                implicitHeight: Math.min(app.doPulseModel.count * 36, 108)
+                clip: true
+                model: app.doPulseModel
+                boundsBehavior: Flickable.StopAtBounds
+                delegate: Rectangle {
+                    required property int seq
+                    required property string point
+                    required property string action
+                    required property string fileName
+                    required property string defectLabel
+                    required property bool lateEject
+                    width: ListView.view.width
+                    height: 36
+                    color: "transparent"
+                    Column {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 1
+                        Text {
+                            width: parent.width
+                            text: point + "  " + action + "  " + defectLabel
+                            color: Theme.danger
+                            font.pixelSize: Theme.smallSize
+                            font.family: Theme.monoFamily
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            width: parent.width
+                            text: fileName + (lateEject ? "  ·  迟剔除" : "")
+                            color: Theme.textSecondary
+                            font.pixelSize: 10
+                            font.family: Theme.monoFamily
+                            elide: Text.ElideRight
+                        }
+                    }
                 }
             }
         }

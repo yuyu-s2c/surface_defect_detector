@@ -42,7 +42,7 @@ Rectangle {
             visible: app.liveRunning
             Layout.fillWidth: true
             Layout.margins: 8
-            text: "取流中：停止后才能选图"
+            text: "模拟取流中（FolderSource，相机离线）：停止后才能选图"
             color: Theme.warn
             font.pixelSize: Theme.smallSize
             font.family: Theme.fontFamily

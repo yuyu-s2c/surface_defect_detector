@@ -180,15 +180,22 @@ ApplicationWindow {
         }
     }
 
+    SelfCheckDialog {
+        id: selfCheckDialog
+    }
+
     Connections {
         target: app
         function onErrorMessageChanged() {
             if (app.errorMessage.length > 0)
                 errorDialog.open()
         }
+        function onSelfCheckRequested() {
+            selfCheckDialog.open()
+        }
     }
 
-    Shortcut { sequence: "Space"; enabled: !win.isTyping(); onActivated: app.liveRunning ? app.stopLive() : app.startLive() }
+    Shortcut { sequence: "Space"; enabled: !win.isTyping(); onActivated: app.requestStartLive() }
     Shortcut { sequence: "Esc"; onActivated: app.stopLive() }
     Shortcut { sequence: "B"; enabled: !win.isTyping(); onActivated: app.runBatch() }
     Shortcut { sequence: "Shift+C"; enabled: !win.isTyping(); onActivated: app.compareEngines() }

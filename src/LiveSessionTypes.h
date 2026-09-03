@@ -20,7 +20,7 @@ struct LivePieceRecord
     int queueDepth = 0;
 };
 
-// 一次 start()～finished() 的摘要。P4 接相机后字段不用改。
+// 一次 start()～finished() 的摘要。P4 接相机后字段不用改；工单/联锁只给 GUI 班次。
 struct LiveSessionSummary
 {
     QString sessionId;
@@ -28,6 +28,9 @@ struct LiveSessionSummary
     QString category;
     QString engineName;
     QString provider;
+    QString workOrder;
+    QString operatorName;
+    QString stopReason; // 空 = 正常跑完 / 人工停止；非空 = 联锁停线
     int targetFps = 0;
     double effectiveFps = 0.0;
     double elapsedSec = 0.0;
@@ -39,4 +42,6 @@ struct LiveSessionSummary
     qint64 maxLatencyMs = 0;
     int planned = 0;
     int done = 0;
+    int consecutiveNgLimit = 0;
+    int consecutiveNg = 0;
 };
