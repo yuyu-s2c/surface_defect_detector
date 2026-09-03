@@ -6,11 +6,13 @@ import SurfaceDefect
 
 ApplicationWindow {
     id: win
-    width: 1400
-    height: 900
-    minimumWidth: 1100
-    minimumHeight: 700
-    visible: true
+    // 几何由 main.cpp placeMainWindow 按可用桌面（含标题栏）夹紧并居中；
+    // 这里只给最小可操作尺寸，避免 1400×900 在笔记本缩放下顶出屏幕。
+    width: 1280
+    height: 720
+    minimumWidth: 960
+    minimumHeight: 560
+    visible: false
     title: "表面缺陷检测工作站"
     color: Theme.bgApp
     font.family: Theme.fontFamily

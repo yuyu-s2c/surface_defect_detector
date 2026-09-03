@@ -10,10 +10,13 @@
 #include <QEventLoop>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QMargins>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
+#include <QScreen>
 #include <QTextStream>
+#include <QWindow>
 
 #include <memory>
 
@@ -327,6 +330,45 @@ static int runLiveSmoke(const QString& categoryArg, EngineKind engineKind, OrtEp
     return 0;
 }
 
+// 按当前屏 availableGeometry 夹紧客户区并居中。固定 1400×900 在 125%/150%
+// 缩放下会连同标题栏超出任务栏以上的可用高度。
+static void placeMainWindow(QWindow* win)
+{
+    if (!win)
+        return;
+    QScreen* screen = win->screen();
+    if (!screen)
+        screen = QGuiApplication::primaryScreen();
+    if (!screen)
+        return;
+
+    const QRect avail = screen->availableGeometry();
+    const int margin = 12;
+    win->create();
+    const QMargins fm = win->frameMargins();
+    int extraW = fm.left() + fm.right();
+    int extraH = fm.top() + fm.bottom();
+    if (extraH <= 0)
+        extraH = 32; // create() 后窗框尚未兑现时的标题栏估计
+    extraW = qMax(0, extraW);
+
+    int innerW = avail.width() - extraW - margin * 2;
+    int innerH = avail.height() - extraH - margin * 2;
+    innerW = qMax(640, innerW);
+    innerH = qMax(480, innerH);
+    innerW = qMin(innerW, 1600);
+
+    if (win->minimumWidth() > innerW)
+        win->setMinimumWidth(innerW);
+    if (win->minimumHeight() > innerH)
+        win->setMinimumHeight(innerH);
+
+    win->resize(innerW, innerH);
+    win->setFramePosition(QPoint(
+        avail.x() + (avail.width() - (innerW + extraW)) / 2,
+        avail.y() + (avail.height() - (innerH + extraH)) / 2));
+}
+
 static int runGui(int argc, char* argv[])
 {
     QGuiApplication app(argc, argv);
@@ -351,6 +393,10 @@ static int runGui(int argc, char* argv[])
     if (engine.rootObjects().isEmpty()) {
         QTextStream(stderr) << "ERROR: QML 加载失败（SurfaceDefect/Main）\n";
         return 1;
+    }
+    if (auto* win = qobject_cast<QWindow*>(engine.rootObjects().constFirst())) {
+        placeMainWindow(win);
+        win->show();
     }
     return QGuiApplication::exec();
 }

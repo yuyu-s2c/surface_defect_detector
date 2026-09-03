@@ -5,7 +5,7 @@ import QtQuick.Layouts
 Rectangle {
     id: root
     color: Theme.bgPanel
-    height: 56
+    height: 48
 
     signal batchClicked()
     signal compareClicked()
@@ -25,10 +25,13 @@ Rectangle {
         anchors.fill: parent
         anchors.leftMargin: 16
         anchors.rightMargin: 12
+        anchors.topMargin: 6
+        anchors.bottomMargin: 6
         spacing: 10
 
         Column {
-            spacing: 1
+            spacing: 0
+            Layout.alignment: Qt.AlignVCenter
             Text {
                 text: "表面缺陷检测"
                 color: Theme.textPrimary
