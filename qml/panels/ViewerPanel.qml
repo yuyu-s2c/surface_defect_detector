@@ -18,12 +18,22 @@ Rectangle {
         detVisible: app.detOverlayVisible
     }
 
+    // 不抢鼠标：画布缩放平移和左上芯片仍要点得到
+    Rectangle {
+        anchors.fill: parent
+        enabled: false
+        color: "transparent"
+        border.width: app.hasImage ? 4 : 0
+        border.color: app.detected ? Theme.danger : Theme.accent
+        visible: app.hasImage
+    }
+
     EmptyState {
         anchors.fill: parent
         visible: !app.hasImage && !app.busy && !app.liveRunning && app.stationAlert.length === 0
         title: app.hasDataset ? "从左侧选择一张测试图" : "先打开数据集根目录"
         subtitle: app.hasDataset
-                  ? "滚轮缩放，左键拖拽平移。红 = GT 标注，绿 = 当前引擎检出。空格开始模拟取流。"
+                  ? "滚轮缩放，左键拖拽平移。绿 = 检出位置。空格开始模拟取流。"
                   : "顶栏「数据集」或 Ctrl+O。目录里放各类的 train/good 与 test/。"
     }
 
@@ -68,6 +78,7 @@ Rectangle {
         anchors.margins: 12
         gtVisible: app.gtOverlayVisible
         detVisible: app.detOverlayVisible
+        liveRunning: app.liveRunning
         zoom: canvas.zoom
         onFitRequested: canvas.fitView()
         onGtToggled: (on) => { app.gtOverlayVisible = on }
@@ -83,6 +94,7 @@ Rectangle {
         detected: app.detected
         verdictOk: app.verdictOk
         liveRunning: app.liveRunning
+        gtVisible: app.gtOverlayVisible
         imageScore: app.imageScore
         imageThreshold: app.imageThreshold
     }
@@ -109,6 +121,7 @@ Rectangle {
         border.width: 0
         opacity: 0
         visible: app.liveRunning
+        enabled: false
 
         SequentialAnimation on opacity {
             id: flashAnim

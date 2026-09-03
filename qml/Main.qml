@@ -25,8 +25,6 @@ ApplicationWindow {
 
     header: AppHeader {
         id: header
-        onBatchClicked: app.runBatch()
-        onCompareClicked: app.compareEngines()
         onExportCurrentClicked: saveDialog.open()
         onExportBatchClicked: folderDialog.open()
         onDatasetClicked: datasetDialog.open()
@@ -66,9 +64,9 @@ ApplicationWindow {
         }
 
         InspectorPanel {
-            SplitView.preferredWidth: 380
+            SplitView.preferredWidth: 400
             SplitView.minimumWidth: 320
-            SplitView.maximumWidth: 480
+            SplitView.maximumWidth: 520
             onExportCurrentClicked: saveDialog.open()
         }
     }

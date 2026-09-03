@@ -81,6 +81,7 @@ Rectangle {
                 readonly property var idx: tree.modelIndex(row, column)
                 readonly property string kind: app.datasetModel.nodeType(idx)
                 readonly property string title: app.datasetModel.displayName(idx)
+                readonly property string defectKey: app.datasetModel.defectType(idx)
                 readonly property int extraCount: app.datasetModel.nodeCount(idx)
 
                 palette.windowText: Theme.textSecondary
@@ -108,7 +109,7 @@ Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
                         text: del.title
                         color: {
-                            if (del.kind === "defect" && del.title === "good")
+                            if (del.kind === "defect" && del.defectKey === "good")
                                 return Theme.textSecondary
                             if (del.kind === "defect")
                                 return Theme.warn

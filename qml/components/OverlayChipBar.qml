@@ -5,6 +5,7 @@ Row {
     spacing: 8
     property bool gtVisible: true
     property bool detVisible: true
+    property bool liveRunning: false
     property real zoom: 1
     signal fitRequested()
     signal gtToggled(bool on)
@@ -49,6 +50,7 @@ Row {
     }
 
     Rectangle {
+        visible: !root.liveRunning
         height: 28
         width: gtText.width + 20
         radius: 14
@@ -57,7 +59,7 @@ Row {
         Text {
             id: gtText
             anchors.centerIn: parent
-            text: "GT"
+            text: "真值"
             color: root.gtVisible ? Theme.gtRed : Theme.textSecondary
             font.pixelSize: Theme.smallSize
             font.family: Theme.fontFamily

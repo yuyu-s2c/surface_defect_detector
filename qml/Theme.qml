@@ -30,4 +30,10 @@ QtObject {
     readonly property int radiusSmall: 6
     readonly property int pad: 12
     readonly property int gap: 8
+
+    readonly property int tableRowH: 30
+    readonly property int tableHeaderH: 30
+    readonly property int tablePad: 10
+    readonly property color tableStripe: "#0DFFFFFF"
+    readonly property color tableGrid: "#1A2A3540"
 }

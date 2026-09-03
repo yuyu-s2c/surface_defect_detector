@@ -2,31 +2,26 @@
 
 #include "ResultEvaluator.h"
 
-#include <QAbstractListModel>
+#include <QAbstractTableModel>
 #include <QMap>
 #include <QString>
+#include <QVariantMap>
 #include <QVector>
 
-class CompareListModel : public QAbstractListModel
+class CompareListModel : public QAbstractTableModel
 {
     Q_OBJECT
 
 public:
+    enum Column {
+        ColDefect = 0,
+        ColCvF1,
+        ColDlF1,
+        ColDelta,
+        ColumnCount
+    };
     enum Role {
-        DefectRole = Qt::UserRole + 1,
-        CvPrecisionRole,
-        CvRecallRole,
-        CvF1Role,
-        CvIouRole,
-        CvImageAccRole,
-        DlPrecisionRole,
-        DlRecallRole,
-        DlF1Role,
-        DlIouRole,
-        DlImageAccRole,
-        DeltaF1Role,
-        IsSummaryRole,
-        IsGoodFprRole
+        IsSummaryRole = Qt::UserRole + 1
     };
 
     explicit CompareListModel(QObject* parent = nullptr);
@@ -38,8 +33,12 @@ public:
     void clear();
 
     int rowCount(const QModelIndex& parent = {}) const override;
+    int columnCount(const QModelIndex& parent = {}) const override;
     QVariant data(const QModelIndex& index, int role) const override;
+    QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
+
+    Q_INVOKABLE QVariantMap extraAt(int row) const;
 
 private:
     struct Row {
@@ -56,7 +55,6 @@ private:
         QString dlImageAcc;
         QString deltaF1;
         bool isSummary = false;
-        bool isGoodFpr = false;
     };
 
     QVector<Row> m_rows;

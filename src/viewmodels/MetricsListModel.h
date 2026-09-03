@@ -2,24 +2,27 @@
 
 #include "ResultEvaluator.h"
 
-#include <QAbstractListModel>
+#include <QAbstractTableModel>
 #include <QMap>
 #include <QString>
 #include <QVector>
 
-class MetricsListModel : public QAbstractListModel
+class MetricsListModel : public QAbstractTableModel
 {
     Q_OBJECT
 
 public:
+    enum Column {
+        ColDefect = 0,
+        ColPrecision,
+        ColRecall,
+        ColF1,
+        ColIou,
+        ColImageAcc,
+        ColumnCount
+    };
     enum Role {
-        DefectRole = Qt::UserRole + 1,
-        PrecisionRole,
-        RecallRole,
-        F1Role,
-        IouRole,
-        ImageAccRole,
-        IsSummaryRole
+        IsSummaryRole = Qt::UserRole + 1
     };
 
     explicit MetricsListModel(QObject* parent = nullptr);
@@ -29,7 +32,9 @@ public:
     void clear();
 
     int rowCount(const QModelIndex& parent = {}) const override;
+    int columnCount(const QModelIndex& parent = {}) const override;
     QVariant data(const QModelIndex& index, int role) const override;
+    QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
 
 private:

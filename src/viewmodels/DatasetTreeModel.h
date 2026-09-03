@@ -28,6 +28,7 @@ public:
 
     Q_INVOKABLE QString nodeType(const QModelIndex& index) const;
     Q_INVOKABLE QString displayName(const QModelIndex& index) const;
+    Q_INVOKABLE QString defectType(const QModelIndex& index) const;
     Q_INVOKABLE int nodeCount(const QModelIndex& index) const;
 
     QModelIndex index(int row, int column, const QModelIndex& parent = {}) const override;

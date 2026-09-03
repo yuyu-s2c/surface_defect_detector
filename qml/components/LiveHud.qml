@@ -10,42 +10,47 @@ Rectangle {
     property int ngCount: 0
     property bool lastNg: false
 
-    implicitWidth: Math.max(col.implicitWidth + 20, 148)
-    implicitHeight: col.implicitHeight + 14
+    implicitWidth: Math.max(col.implicitWidth + 24, 168)
+    implicitHeight: col.implicitHeight + 16
     radius: Theme.radius
     color: Theme.bgElevated
-    border.color: lastNg ? Theme.danger : Theme.border
-    border.width: lastNg ? 2 : 1
+    border.color: lastNg ? Theme.danger : Theme.accent
+    border.width: 2
     opacity: 0.96
 
     Column {
         id: col
         anchors.centerIn: parent
-        spacing: 2
+        spacing: 4
         Text {
-            text: "OK " + root.okCount + "   NG " + root.ngCount
-            color: root.lastNg ? Theme.danger : Theme.accent
-            font.pixelSize: Theme.bodySize
-            font.family: Theme.monoFamily
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: "合格  " + root.okCount
+            color: Theme.accent
+            font.pixelSize: 16
+            font.family: Theme.fontFamily
             font.bold: true
         }
         Text {
-            text: "延迟 " + root.latencyMs + " ms"
-            color: Theme.textPrimary
-            font.pixelSize: Theme.smallSize
-            font.family: Theme.monoFamily
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: "不合格  " + root.ngCount
+            color: Theme.danger
+            font.pixelSize: 16
+            font.family: Theme.fontFamily
+            font.bold: true
         }
         Text {
-            text: "队列 " + root.queueDepth + "/" + root.queueMax
-            color: root.queueDepth >= root.queueMax ? Theme.warn : Theme.textSecondary
-            font.pixelSize: Theme.smallSize
-            font.family: Theme.monoFamily
-        }
-        Text {
-            text: root.actualFps.toFixed(1) + " fps"
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: root.actualFps.toFixed(1) + " 帧/秒  ·  延迟 " + root.latencyMs + " ms"
             color: Theme.textSecondary
             font.pixelSize: Theme.smallSize
-            font.family: Theme.monoFamily
+            font.family: Theme.fontFamily
+        }
+        Text {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: "队列 " + root.queueDepth + "/" + root.queueMax
+            color: root.queueDepth >= root.queueMax ? Theme.warn : Theme.textSecondary
+            font.pixelSize: 10
+            font.family: Theme.fontFamily
         }
     }
 }

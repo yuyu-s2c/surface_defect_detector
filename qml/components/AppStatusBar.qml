@@ -57,17 +57,17 @@ Rectangle {
         spacing: 8
         visible: root.liveRunning
         Text {
-            text: "OK " + root.liveOk
+            text: "合格 " + root.liveOk
             color: Theme.accent
             font.pixelSize: Theme.smallSize
-            font.family: Theme.monoFamily
+            font.family: Theme.fontFamily
             font.bold: true
         }
         Text {
-            text: "NG " + root.liveNg
+            text: "不合格 " + root.liveNg
             color: Theme.danger
             font.pixelSize: Theme.smallSize
-            font.family: Theme.monoFamily
+            font.family: Theme.fontFamily
             font.bold: true
         }
     }

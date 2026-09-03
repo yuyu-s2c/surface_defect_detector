@@ -1,5 +1,6 @@
 #include "MainViewModel.h"
 
+#include "DisplayNames.h"
 #include "Format.h"
 #include "ImageConvert.h"
 #include "OverlayColors.h"
@@ -54,17 +55,24 @@ MainViewModel::~MainViewModel()
     m_session.stop();
 }
 
+QString MainViewModel::currentCategoryLabel() const
+{
+    return folderDisplayName(m_currentCategory);
+}
+
 QString MainViewModel::imageInfo() const
 {
     if (m_currentImagePath.isEmpty())
         return QStringLiteral("未选择图片");
     return QStringLiteral("%1 / %2 / %3")
-        .arg(m_currentCategory, m_currentDefectType, QFileInfo(m_currentImagePath).fileName());
+        .arg(folderDisplayName(m_currentCategory),
+             folderDisplayName(m_currentDefectType),
+             QFileInfo(m_currentImagePath).fileName());
 }
 
 QString MainViewModel::scoreRuleText() const
 {
-    return QStringLiteral("OK / NG = 图像分 ≥ 判定阈值（分数过线）。绿叠加面积只影响框，不驱动剔除。");
+    return QStringLiteral("合格 / 不合格 = 图像分达到判定阈值。绿框只标位置，不单独决定剔除。");
 }
 
 QString MainViewModel::aboutBody() const
@@ -75,14 +83,14 @@ QString MainViewModel::aboutBody() const
         "权重约定：models/<类别>/weights/onnx/<类别>.onnx。"
         "首次对该执行器标定会扫描 train/good 并写入同目录 .calib.json（v3，按 EP 分键），之后复用缓存。\n\n"
         "图像级判定是分数过线，不是掩码面积。面积门只影响绿叠加和 --batch 对照列。\n\n"
-        "本机未接相机 / PLC（Phase 4）。取流是 FolderSource 按 FPS 吐当前类 test/。");
+        "本机未接相机 / PLC（Phase 4）。取流是 FolderSource 按设定帧率吐当前类 test/。");
 }
 
 QString MainViewModel::shortcutsHelp() const
 {
     return QStringLiteral(
         "空格 开始/停止取流    Esc 停止取流    B 批量    Shift+C 对比引擎\n"
-        "1 传统 CV    2 EfficientAD    G GT 叠加    D 检测叠加    F 适应画面\n"
+        "1 传统 CV    2 EfficientAD    G 真值叠加    D 检测叠加    F 适应画面\n"
         "Ctrl+O 打开数据集    Ctrl+E 导出当前图    Ctrl+Shift+E 导出批量    F1 关于");
 }
 
@@ -479,6 +487,8 @@ void MainViewModel::setEngineKind(int kind)
 
 void MainViewModel::setGtOverlayVisible(bool visible)
 {
+    if (m_liveRunning)
+        return;
     if (m_gtOverlayVisible == visible)
         return;
     m_gtOverlayVisible = visible;
@@ -765,6 +775,16 @@ void MainViewModel::setLiveRunning(bool running)
 {
     if (m_liveRunning == running)
         return;
+    if (running) {
+        m_gtOverlayBeforeLive = m_gtOverlayVisible;
+        if (m_gtOverlayVisible) {
+            m_gtOverlayVisible = false;
+            emit overlayChanged();
+        }
+    } else if (m_gtOverlayVisible != m_gtOverlayBeforeLive) {
+        m_gtOverlayVisible = m_gtOverlayBeforeLive;
+        emit overlayChanged();
+    }
     m_liveRunning = running;
     emit liveRunningChanged();
     emit workEnabledChanged();
@@ -834,7 +854,8 @@ void MainViewModel::onEnginePrepared(bool ok, const QString& category)
     emit liveStatsChanged();
     setLiveRunning(true);
     setStatusTone(QStringLiteral("ok"));
-    setStatusText(QStringLiteral("取流中 %1 @ %2 fps…").arg(category).arg(m_liveTargetFps));
+    setStatusText(QStringLiteral("取流中 %1 @ %2 帧/秒…")
+                      .arg(folderDisplayName(category)).arg(m_liveTargetFps));
     refreshStationStatus();
 }
 
@@ -867,24 +888,24 @@ void MainViewModel::onLiveFrame(const LiveInspectedFrame& frame)
     m_liveActualFps = frame.actualFps;
     emit liveStatsChanged();
 
-    const QString verdict = frame.result.detected() ? QStringLiteral("NG") : QStringLiteral("OK");
+    const QString verdict = frame.result.detected() ? QStringLiteral("不合格") : QStringLiteral("合格");
     if (frame.result.detected())
         ++m_liveNgCount;
     else
         ++m_liveOkCount;
     m_liveLastNg = frame.result.detected();
     setStatusTone(m_liveLastNg ? QStringLiteral("ng") : QStringLiteral("ok"));
-    setStatusText(QStringLiteral("取流 %1 fps | 延迟 %2 ms | 队列 %3/%4 | OK %5 · NG %6 | %7 | %8/%9/%10（%11/%12）")
-                      .arg(frame.actualFps, 0, 'f', 1)
-                      .arg(frame.latencyMs)
-                      .arg(frame.queueDepth)
-                      .arg(frame.queueMax)
+    setStatusText(QStringLiteral("合格 %1 · 不合格 %2  |  %3  |  %4/%5/%6（%7/%8）  |  %9 帧/秒  延迟 %10 ms")
                       .arg(m_liveOkCount)
                       .arg(m_liveNgCount)
                       .arg(verdict)
-                      .arg(frame.category, frame.defectType, QFileInfo(frame.path).fileName())
+                      .arg(folderDisplayName(frame.category),
+                           folderDisplayName(frame.defectType),
+                           QFileInfo(frame.path).fileName())
                       .arg(frame.done)
-                      .arg(frame.total));
+                      .arg(frame.total)
+                      .arg(frame.actualFps, 0, 'f', 1)
+                      .arg(frame.latencyMs));
 }
 
 void MainViewModel::onLiveFinished(int total, int ngCount)
@@ -892,11 +913,11 @@ void MainViewModel::onLiveFinished(int total, int ngCount)
     m_liveStarting = false;
     setLiveRunning(false);
     setStatusTone(ngCount > 0 ? QStringLiteral("ng") : QStringLiteral("ok"));
-    setStatusText(QStringLiteral("取流结束：%1 张，OK %2，NG %3")
+    setStatusText(QStringLiteral("取流结束：%1 张，合格 %2，不合格 %3")
                       .arg(total)
                       .arg(qMax(0, total - ngCount))
                       .arg(ngCount));
-    showToast(QStringLiteral("取流结束：NG %1 / %2").arg(ngCount).arg(total));
+    showToast(QStringLiteral("取流结束：不合格 %1 / %2").arg(ngCount).arg(total));
     refreshStationStatus();
 }
 
@@ -1120,7 +1141,7 @@ void MainViewModel::onDetectFinished(bool ok, const DetectionResult& result)
     applyDetectionResult(result);
     refreshStationStatus();
     setStatusTone(result.detected() ? QStringLiteral("ng") : QStringLiteral("ok"));
-    const QString verdict = result.detected() ? QStringLiteral("NG") : QStringLiteral("OK");
+    const QString verdict = result.detected() ? QStringLiteral("不合格") : QStringLiteral("合格");
     setStatusText(QStringLiteral("%1  %2  分 %3 / 阈 %4")
                       .arg(verdict, imageInfo())
                       .arg(result.imageScore, 0, 'f', 4)
@@ -1144,7 +1165,7 @@ void MainViewModel::onBatchFinished(bool ok, const QString& category)
     setInspectorTab(2);
     setStatusTone(QStringLiteral("ok"));
     setStatusText(QStringLiteral("已完成 %1 批量检测（%2）")
-                      .arg(category, currentEngineName()));
+                      .arg(folderDisplayName(category), currentEngineName()));
     showToast(QStringLiteral("批量完成，见右侧「指标」"));
     refreshStationStatus();
 }
@@ -1158,7 +1179,7 @@ void MainViewModel::onCompareFinished(bool ok, const QString& category)
     refreshBatchDependent();
     setInspectorTab(3);
     setStatusTone(QStringLiteral("ok"));
-    setStatusText(QStringLiteral("已完成 %1 双引擎对比").arg(category));
+    setStatusText(QStringLiteral("已完成 %1 双引擎对比").arg(folderDisplayName(category)));
     showToast(QStringLiteral("对比完成，见右侧「对比」"));
     refreshStationStatus();
 }

@@ -30,6 +30,7 @@ class MainViewModel : public QObject
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
     Q_PROPERTY(QString datasetRoot READ datasetRoot NOTIFY hasDatasetChanged)
     Q_PROPERTY(QString currentCategory READ currentCategory NOTIFY selectionChanged)
+    Q_PROPERTY(QString currentCategoryLabel READ currentCategoryLabel NOTIFY selectionChanged)
     Q_PROPERTY(QString currentDefectType READ currentDefectType NOTIFY selectionChanged)
     Q_PROPERTY(QString currentImagePath READ currentImagePath NOTIFY selectionChanged)
     Q_PROPERTY(QString imageInfo READ imageInfo NOTIFY selectionChanged)
@@ -115,6 +116,7 @@ public:
     QString errorMessage() const { return m_errorMessage; }
     QString datasetRoot() const { return m_datasetRoot; }
     QString currentCategory() const { return m_currentCategory; }
+    QString currentCategoryLabel() const;
     QString currentDefectType() const { return m_currentDefectType; }
     QString currentImagePath() const { return m_currentImagePath; }
     QString imageInfo() const;
@@ -294,7 +296,8 @@ private:
     bool m_busy = false;
     bool m_syncingParams = false;
     bool m_paramsDirty = false;
-    bool m_gtOverlayVisible = true;
+    bool m_gtOverlayVisible = false;
+    bool m_gtOverlayBeforeLive = false;
     bool m_detOverlayVisible = true;
     bool m_detected = false;
     bool m_verdictOk = true;

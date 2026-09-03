@@ -64,7 +64,7 @@ ColumnLayout {
         spacing: 8
         Layout.fillWidth: true
         ParamRow {
-            label: "阈值 kσ"
+            label: "阈值倍数"
             AppDoubleSpin {
                 Layout.fillWidth: true
                 realFrom: 0.1; realTo: 8; realStep: 0.1; decimals: 2
@@ -130,8 +130,8 @@ ColumnLayout {
 
     Text {
         text: app.engineKind === 1
-              ? "默认 = 该类 P2 工作点。改 kσ 点应用即可，不必重跑 train/good 标定。叠加面积门只切绿框，不驱动 OK/NG。"
-              : "默认 = v0.1 / P2 工作点。图像级门同时是 CV 的判定阈值（分数=面积）。"
+              ? "默认 = 该类 P2 工作点。改阈值倍数点应用即可，不必重跑 train/good 标定。叠加面积门只切绿框，不驱动合格/不合格。"
+              : "默认 = v0.1 / P2 工作点。图像级门同时是传统引擎的判定阈值（分数=面积）。"
         color: Theme.textSecondary
         font.pixelSize: Theme.smallSize
         font.family: Theme.fontFamily

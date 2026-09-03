@@ -6,17 +6,18 @@ Rectangle {
     property bool detected: false
     property bool verdictOk: true
     property bool liveRunning: false
+    property bool gtVisible: false
     property real imageScore: 0
     property real imageThreshold: 0
 
     readonly property bool positive: !detected
 
     visible: hasImage
-    implicitWidth: Math.max(col.implicitWidth + 24, 108)
-    implicitHeight: col.implicitHeight + 16
+    implicitWidth: Math.max(col.implicitWidth + 28, 132)
+    implicitHeight: col.implicitHeight + 20
     radius: Theme.radius
     color: positive ? Theme.accentDim : Theme.dangerDim
-    border.width: 1
+    border.width: 2
     border.color: positive ? Theme.accent : Theme.danger
     opacity: 0.96
 
@@ -28,15 +29,8 @@ Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
             text: root.detected ? "不合格" : "合格"
             color: root.positive ? Theme.accent : Theme.danger
-            font.pixelSize: 18
+            font.pixelSize: 28
             font.bold: true
-            font.family: Theme.fontFamily
-        }
-        Text {
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: root.detected ? "NG · 分数过线" : "OK · 未过线"
-            color: Theme.textPrimary
-            font.pixelSize: Theme.smallSize
             font.family: Theme.fontFamily
         }
         Text {
@@ -47,9 +41,9 @@ Rectangle {
             font.family: Theme.monoFamily
         }
         Text {
-            visible: !root.liveRunning
+            visible: !root.liveRunning && root.gtVisible
             anchors.horizontalCenter: parent.horizontalCenter
-            text: root.verdictOk ? "与 GT 一致" : "与 GT 不一致"
+            text: root.verdictOk ? "与真值一致" : "与真值不一致"
             color: root.verdictOk ? Theme.textSecondary : Theme.warn
             font.pixelSize: 10
             font.family: Theme.fontFamily

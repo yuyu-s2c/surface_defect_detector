@@ -4,19 +4,20 @@ import QtQuick.Layouts
 ColumnLayout {
     id: root
     spacing: 10
-    property int expandedRow: -1
+
+    readonly property var extra: app.compareModel.extraAt(table.selectedRow)
 
     RowLayout {
         Layout.fillWidth: true
         spacing: 8
         StatTile {
             Layout.fillWidth: true
-            label: "汇总 F1"
-            value: app.hasCompare ? ("CV " + app.compareCvF1 + "  DL " + app.compareDlF1) : "—"
+            label: "汇总综合分"
+            value: app.hasCompare ? ("传统 " + app.compareCvF1 + "  深度 " + app.compareDlF1) : "—"
         }
         StatTile {
             Layout.fillWidth: true
-            label: "ΔF1 (DL−CV)"
+            label: "深度相对传统"
             value: app.hasCompare ? app.compareDeltaF1 : "—"
         }
     }
@@ -25,7 +26,7 @@ ColumnLayout {
         spacing: 8
         StatTile {
             Layout.fillWidth: true
-            label: "图像级 CV / DL"
+            label: "图像检出 传统 / 深度"
             value: app.hasCompare ? (app.compareCvImg + "  /  " + app.compareDlImg) : "—"
         }
     }
@@ -34,89 +35,93 @@ ColumnLayout {
         spacing: 8
         StatTile {
             Layout.fillWidth: true
-            label: "good 误报 CV / DL"
+            label: "良品误报 传统 / 深度"
             value: app.hasCompare ? (app.compareCvFpr + "  /  " + app.compareDlFpr) : "—"
         }
     }
 
-    RowLayout {
-        Layout.fillWidth: true
-        Text { Layout.preferredWidth: 72; text: "类型"; color: Theme.textSecondary; font.pixelSize: Theme.smallSize; font.family: Theme.fontFamily }
-        Text { Layout.fillWidth: true; text: "CV F1"; color: Theme.textSecondary; font.pixelSize: Theme.smallSize; font.family: Theme.fontFamily }
-        Text { Layout.fillWidth: true; text: "DL F1"; color: Theme.textSecondary; font.pixelSize: Theme.smallSize; font.family: Theme.fontFamily }
-        Text { Layout.fillWidth: true; text: "ΔF1"; color: Theme.textSecondary; font.pixelSize: Theme.smallSize; font.family: Theme.fontFamily }
-    }
-    Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
-
-    ListView {
+    AppTable {
+        id: table
         Layout.fillWidth: true
         Layout.fillHeight: true
-        clip: true
         model: app.compareModel
-        boundsBehavior: Flickable.StopAtBounds
-        delegate: Column {
-            id: rowRoot
-            required property int index
-            required property string defect
-            required property string cvF1
-            required property string dlF1
-            required property string deltaF1
-            required property string cvPrecision
-            required property string cvRecall
-            required property string cvIou
-            required property string dlPrecision
-            required property string dlRecall
-            required property string dlIou
-            required property string cvImageAcc
-            required property string dlImageAcc
-            required property bool isSummary
-            required property bool isGoodFpr
-            width: ListView.view.width
-            visible: !isGoodFpr
+        columnWeight: [1.25, 1.1, 1.1, 0.9]
+        columnAlign: [Text.AlignLeft, Text.AlignRight, Text.AlignRight, Text.AlignRight]
+        textColumns: [0]
+        accentColumns: [2]
+        selectable: true
+    }
 
-            Rectangle {
-                width: parent.width
-                height: 30
-                color: isSummary ? Theme.accentDim
-                                 : (root.expandedRow === index ? Theme.bgHover
-                                    : (index % 2 ? "transparent" : "#0AFFFFFF"))
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 2
-                    Text { Layout.preferredWidth: 72; text: defect; color: Theme.textPrimary; font.pixelSize: Theme.smallSize; font.family: Theme.fontFamily; font.bold: isSummary; elide: Text.ElideRight }
-                    Text { Layout.fillWidth: true; text: cvF1; color: Theme.textPrimary; font.pixelSize: Theme.smallSize; font.family: Theme.monoFamily }
-                    Text { Layout.fillWidth: true; text: dlF1; color: Theme.accent; font.pixelSize: Theme.smallSize; font.family: Theme.monoFamily }
-                    Text { Layout.fillWidth: true; text: deltaF1; color: Theme.textPrimary; font.pixelSize: Theme.smallSize; font.family: Theme.monoFamily }
-                }
-                MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.expandedRow = (root.expandedRow === index ? -1 : index)
+    Rectangle {
+        visible: table.selectedRow >= 0 && extra && extra.isSummary !== true
+        Layout.fillWidth: true
+        implicitHeight: detailGrid.implicitHeight + 16
+        radius: Theme.radius
+        color: Theme.bgElevated
+        border.color: Theme.border
+        border.width: 1
+
+        GridLayout {
+            id: detailGrid
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.margins: 8
+            columns: 5
+            columnSpacing: 8
+            rowSpacing: 4
+
+            Repeater {
+                model: ["", "精确率", "召回率", "交并比", "图像检出"]
+                Text {
+                    required property int index
+                    required property string modelData
+                    Layout.fillWidth: true
+                    text: modelData
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.smallSize
+                    font.family: Theme.fontFamily
+                    horizontalAlignment: index === 0 ? Text.AlignLeft : Text.AlignRight
                 }
             }
-
-            Rectangle {
-                visible: root.expandedRow === index && !isSummary
-                width: parent.width
-                height: 52
-                color: Theme.bgElevated
-                Column {
-                    anchors.fill: parent
-                    anchors.margins: 8
-                    spacing: 2
-                    Text {
-                        text: "CV  P " + cvPrecision + "  R " + cvRecall + "  IoU " + cvIou + "  " + cvImageAcc
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.smallSize
-                        font.family: Theme.monoFamily
-                    }
-                    Text {
-                        text: "DL  P " + dlPrecision + "  R " + dlRecall + "  IoU " + dlIou + "  " + dlImageAcc
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.smallSize
-                        font.family: Theme.monoFamily
-                    }
+            Repeater {
+                model: [
+                    "传统",
+                    extra.cvPrecision ?? "",
+                    extra.cvRecall ?? "",
+                    extra.cvIou ?? "",
+                    extra.cvImageAcc ?? ""
+                ]
+                Text {
+                    required property string modelData
+                    required property int index
+                    Layout.fillWidth: true
+                    text: modelData
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.smallSize
+                    font.family: index === 0 ? Theme.fontFamily : Theme.monoFamily
+                    horizontalAlignment: index === 0 ? Text.AlignLeft : Text.AlignRight
+                    elide: Text.ElideRight
+                }
+            }
+            Repeater {
+                model: [
+                    "深度",
+                    extra.dlPrecision ?? "",
+                    extra.dlRecall ?? "",
+                    extra.dlIou ?? "",
+                    extra.dlImageAcc ?? ""
+                ]
+                Text {
+                    required property string modelData
+                    required property int index
+                    Layout.fillWidth: true
+                    text: modelData
+                    color: index === 0 ? Theme.textPrimary : Theme.accent
+                    font.pixelSize: Theme.smallSize
+                    font.family: index === 0 ? Theme.fontFamily : Theme.monoFamily
+                    horizontalAlignment: index === 0 ? Text.AlignLeft : Text.AlignRight
+                    elide: Text.ElideRight
                 }
             }
         }

@@ -1,6 +1,7 @@
 #include "DatasetTreeModel.h"
 
 #include "DatasetManager.h"
+#include "DisplayNames.h"
 
 #include <QFileInfo>
 
@@ -37,6 +38,11 @@ QString DatasetTreeModel::displayName(const QModelIndex& index) const
     return data(index, Qt::DisplayRole).toString();
 }
 
+QString DatasetTreeModel::defectType(const QModelIndex& index) const
+{
+    return data(index, DefectTypeRole).toString();
+}
+
 int DatasetTreeModel::nodeCount(const QModelIndex& index) const
 {
     return data(index, CountRole).toInt();
@@ -58,7 +64,7 @@ void DatasetTreeModel::rebuild(const DatasetManager& dataset)
     for (const QString& cat : cats) {
         auto* catNode = new Node;
         catNode->parent = m_root;
-        catNode->display = cat;
+        catNode->display = folderDisplayName(cat);
         catNode->nodeType = QStringLiteral("category");
         catNode->category = cat;
 
@@ -68,7 +74,7 @@ void DatasetTreeModel::rebuild(const DatasetManager& dataset)
             const QStringList images = dataset.testImages(cat, defect);
             auto* defNode = new Node;
             defNode->parent = catNode;
-            defNode->display = defect;
+            defNode->display = folderDisplayName(defect);
             defNode->nodeType = QStringLiteral("defect");
             defNode->category = cat;
             defNode->defectType = defect;

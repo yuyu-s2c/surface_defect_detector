@@ -1,9 +1,10 @@
 #include "CompareListModel.h"
 
+#include "DisplayNames.h"
 #include "Format.h"
 
 CompareListModel::CompareListModel(QObject* parent)
-    : QAbstractListModel(parent)
+    : QAbstractTableModel(parent)
 {
 }
 
@@ -62,36 +63,13 @@ void CompareListModel::setCompare(const QMap<QString, PixelMetrics>& cvPixel,
         dlTotal += dp;
         cvImg += ci;
         dlImg += di;
-        m_rows.push_back(makeRow(defect, cp, ci, dp, di));
+        m_rows.push_back(makeRow(folderDisplayName(defect), cp, ci, dp, di));
     }
 
     if (!keys.isEmpty()) {
         Row sum = makeRow(QStringLiteral("汇总"), cvTotal, cvImg, dlTotal, dlImg);
         sum.isSummary = true;
         m_rows.push_back(sum);
-
-        const ImageMetrics cvGood = cvImage.value(QStringLiteral("good"));
-        const ImageMetrics dlGood = dlImage.value(QStringLiteral("good"));
-        Row fpr;
-        fpr.defect = QStringLiteral("good 误报率");
-        fpr.isGoodFpr = true;
-        if (cvGood.total > 0) {
-            fpr.cvImageAcc = QStringLiteral("%1 (%2/%3)")
-                                 .arg(fmt3(1.0 - cvGood.accuracy()))
-                                 .arg(cvGood.total - cvGood.correct)
-                                 .arg(cvGood.total);
-        } else {
-            fpr.cvImageAcc = QStringLiteral("—");
-        }
-        if (dlGood.total > 0) {
-            fpr.dlImageAcc = QStringLiteral("%1 (%2/%3)")
-                                 .arg(fmt3(1.0 - dlGood.accuracy()))
-                                 .arg(dlGood.total - dlGood.correct)
-                                 .arg(dlGood.total);
-        } else {
-            fpr.dlImageAcc = QStringLiteral("—");
-        }
-        m_rows.push_back(fpr);
     }
     endResetModel();
 }
@@ -103,61 +81,73 @@ int CompareListModel::rowCount(const QModelIndex& parent) const
     return m_rows.size();
 }
 
+int CompareListModel::columnCount(const QModelIndex& parent) const
+{
+    if (parent.isValid())
+        return 0;
+    return ColumnCount;
+}
+
 QVariant CompareListModel::data(const QModelIndex& index, int role) const
 {
     if (!index.isValid() || index.row() < 0 || index.row() >= m_rows.size())
         return {};
     const Row& r = m_rows.at(index.row());
-    switch (role) {
-    case DefectRole:
-        return r.defect;
-    case CvPrecisionRole:
-        return r.cvPrecision;
-    case CvRecallRole:
-        return r.cvRecall;
-    case CvF1Role:
-        return r.cvF1;
-    case CvIouRole:
-        return r.cvIou;
-    case CvImageAccRole:
-        return r.cvImageAcc;
-    case DlPrecisionRole:
-        return r.dlPrecision;
-    case DlRecallRole:
-        return r.dlRecall;
-    case DlF1Role:
-        return r.dlF1;
-    case DlIouRole:
-        return r.dlIou;
-    case DlImageAccRole:
-        return r.dlImageAcc;
-    case DeltaF1Role:
-        return r.deltaF1;
-    case IsSummaryRole:
+    if (role == IsSummaryRole)
         return r.isSummary;
-    case IsGoodFprRole:
-        return r.isGoodFpr;
+    if (role != Qt::DisplayRole || index.column() < 0 || index.column() >= ColumnCount)
+        return {};
+    switch (index.column()) {
+    case ColDefect:
+        return r.defect;
+    case ColCvF1:
+        return r.cvF1;
+    case ColDlF1:
+        return r.dlF1;
+    case ColDelta:
+        return r.deltaF1;
     default:
         return {};
     }
 }
 
+QVariant CompareListModel::headerData(int section, Qt::Orientation orientation, int role) const
+{
+    if (orientation != Qt::Horizontal || role != Qt::DisplayRole)
+        return {};
+    static const QStringList headers = {
+        QStringLiteral("类型"),
+        QStringLiteral("传统综合分"),
+        QStringLiteral("深度综合分"),
+        QStringLiteral("差值"),
+    };
+    if (section < 0 || section >= headers.size())
+        return {};
+    return headers.at(section);
+}
+
 QHash<int, QByteArray> CompareListModel::roleNames() const
 {
+    auto names = QAbstractTableModel::roleNames();
+    names.insert(IsSummaryRole, "isSummary");
+    return names;
+}
+
+QVariantMap CompareListModel::extraAt(int row) const
+{
+    if (row < 0 || row >= m_rows.size())
+        return {};
+    const Row& r = m_rows.at(row);
     return {
-        {DefectRole, "defect"},
-        {CvPrecisionRole, "cvPrecision"},
-        {CvRecallRole, "cvRecall"},
-        {CvF1Role, "cvF1"},
-        {CvIouRole, "cvIou"},
-        {CvImageAccRole, "cvImageAcc"},
-        {DlPrecisionRole, "dlPrecision"},
-        {DlRecallRole, "dlRecall"},
-        {DlF1Role, "dlF1"},
-        {DlIouRole, "dlIou"},
-        {DlImageAccRole, "dlImageAcc"},
-        {DeltaF1Role, "deltaF1"},
-        {IsSummaryRole, "isSummary"},
-        {IsGoodFprRole, "isGoodFpr"},
+        {QStringLiteral("defect"), r.defect},
+        {QStringLiteral("cvPrecision"), r.cvPrecision},
+        {QStringLiteral("cvRecall"), r.cvRecall},
+        {QStringLiteral("cvIou"), r.cvIou},
+        {QStringLiteral("cvImageAcc"), r.cvImageAcc},
+        {QStringLiteral("dlPrecision"), r.dlPrecision},
+        {QStringLiteral("dlRecall"), r.dlRecall},
+        {QStringLiteral("dlIou"), r.dlIou},
+        {QStringLiteral("dlImageAcc"), r.dlImageAcc},
+        {QStringLiteral("isSummary"), r.isSummary},
     };
 }

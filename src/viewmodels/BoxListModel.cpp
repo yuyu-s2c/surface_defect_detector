@@ -1,7 +1,7 @@
 #include "BoxListModel.h"
 
 BoxListModel::BoxListModel(QObject* parent)
-    : QAbstractListModel(parent)
+    : QAbstractTableModel(parent)
 {
 }
 
@@ -28,34 +28,52 @@ int BoxListModel::rowCount(const QModelIndex& parent) const
     return m_rows.size();
 }
 
+int BoxListModel::columnCount(const QModelIndex& parent) const
+{
+    if (parent.isValid())
+        return 0;
+    return ColumnCount;
+}
+
 QVariant BoxListModel::data(const QModelIndex& index, int role) const
 {
-    if (!index.isValid() || index.row() < 0 || index.row() >= m_rows.size())
+    if (role != Qt::DisplayRole || !index.isValid()
+        || index.row() < 0 || index.row() >= m_rows.size()
+        || index.column() < 0 || index.column() >= ColumnCount) {
         return {};
+    }
     const Row& r = m_rows.at(index.row());
-    switch (role) {
-    case XRole:
+    switch (index.column()) {
+    case ColNo:
+        return index.row() + 1;
+    case ColX:
         return r.x;
-    case YRole:
+    case ColY:
         return r.y;
-    case WidthRole:
+    case ColW:
         return r.width;
-    case HeightRole:
+    case ColH:
         return r.height;
-    case AreaRole:
-        return r.area;
+    case ColArea:
+        return qRound(r.area);
     default:
         return {};
     }
 }
 
-QHash<int, QByteArray> BoxListModel::roleNames() const
+QVariant BoxListModel::headerData(int section, Qt::Orientation orientation, int role) const
 {
-    return {
-        {XRole, "x"},
-        {YRole, "y"},
-        {WidthRole, "width"},
-        {HeightRole, "height"},
-        {AreaRole, "area"},
+    if (orientation != Qt::Horizontal || role != Qt::DisplayRole)
+        return {};
+    static const QStringList headers = {
+        QStringLiteral("序号"),
+        QStringLiteral("左"),
+        QStringLiteral("上"),
+        QStringLiteral("宽"),
+        QStringLiteral("高"),
+        QStringLiteral("面积"),
     };
+    if (section < 0 || section >= headers.size())
+        return {};
+    return headers.at(section);
 }

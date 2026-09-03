@@ -71,6 +71,7 @@ qt_add_qml_module(surface_defect_detector
         qml/components/VerdictBadge.qml
         qml/components/StatTile.qml
         qml/components/ParamForm.qml
+        qml/components/AppTable.qml
         qml/components/BoxTable.qml
         qml/components/MetricsTable.qml
         qml/components/CompareView.qml

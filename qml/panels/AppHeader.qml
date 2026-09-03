@@ -7,8 +7,6 @@ Rectangle {
     color: Theme.bgPanel
     height: 48
 
-    signal batchClicked()
-    signal compareClicked()
     signal exportCurrentClicked()
     signal exportBatchClicked()
     signal datasetClicked()
@@ -73,31 +71,18 @@ Rectangle {
             Text {
                 id: catText
                 anchors.centerIn: parent
-                text: app.currentCategory
+                text: app.currentCategoryLabel
                 color: Theme.textSecondary
                 font.pixelSize: Theme.smallSize
-                font.family: Theme.monoFamily
+                font.family: Theme.fontFamily
             }
-        }
-
-        AppButton {
-            text: "批量运行"
-            primary: true
-            enabled: app.canRunBatch
-            onClicked: root.batchClicked()
-        }
-        AppButton {
-            text: "对比引擎"
-            outlined: true
-            enabled: app.canRunBatch
-            onClicked: root.compareClicked()
         }
 
         Row {
             spacing: 6
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                text: "FPS"
+                text: "帧率"
                 color: Theme.textSecondary
                 font.pixelSize: Theme.smallSize
                 font.family: Theme.fontFamily

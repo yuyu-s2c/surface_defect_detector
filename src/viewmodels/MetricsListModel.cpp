@@ -1,9 +1,10 @@
 #include "MetricsListModel.h"
 
+#include "DisplayNames.h"
 #include "Format.h"
 
 MetricsListModel::MetricsListModel(QObject* parent)
-    : QAbstractListModel(parent)
+    : QAbstractTableModel(parent)
 {
 }
 
@@ -31,7 +32,7 @@ void MetricsListModel::setMetrics(const QMap<QString, PixelMetrics>& pixel,
         totalP += p;
         totalI += im;
         Row row;
-        row.defect = defect;
+        row.defect = folderDisplayName(defect);
         row.precision = fmt3(p.precision());
         row.recall = fmt3(p.recall());
         row.f1 = fmt3(p.f1());
@@ -61,40 +62,60 @@ int MetricsListModel::rowCount(const QModelIndex& parent) const
     return m_rows.size();
 }
 
+int MetricsListModel::columnCount(const QModelIndex& parent) const
+{
+    if (parent.isValid())
+        return 0;
+    return ColumnCount;
+}
+
 QVariant MetricsListModel::data(const QModelIndex& index, int role) const
 {
     if (!index.isValid() || index.row() < 0 || index.row() >= m_rows.size())
         return {};
     const Row& r = m_rows.at(index.row());
-    switch (role) {
-    case DefectRole:
-        return r.defect;
-    case PrecisionRole:
-        return r.precision;
-    case RecallRole:
-        return r.recall;
-    case F1Role:
-        return r.f1;
-    case IouRole:
-        return r.iou;
-    case ImageAccRole:
-        return r.imageAcc;
-    case IsSummaryRole:
+    if (role == IsSummaryRole)
         return r.isSummary;
+    if (role != Qt::DisplayRole || index.column() < 0 || index.column() >= ColumnCount)
+        return {};
+    switch (index.column()) {
+    case ColDefect:
+        return r.defect;
+    case ColPrecision:
+        return r.precision;
+    case ColRecall:
+        return r.recall;
+    case ColF1:
+        return r.f1;
+    case ColIou:
+        return r.iou;
+    case ColImageAcc:
+        return r.imageAcc;
     default:
         return {};
     }
 }
 
+QVariant MetricsListModel::headerData(int section, Qt::Orientation orientation, int role) const
+{
+    if (orientation != Qt::Horizontal || role != Qt::DisplayRole)
+        return {};
+    static const QStringList headers = {
+        QStringLiteral("缺陷类型"),
+        QStringLiteral("精确率"),
+        QStringLiteral("召回率"),
+        QStringLiteral("综合分"),
+        QStringLiteral("交并比"),
+        QStringLiteral("图像检出"),
+    };
+    if (section < 0 || section >= headers.size())
+        return {};
+    return headers.at(section);
+}
+
 QHash<int, QByteArray> MetricsListModel::roleNames() const
 {
-    return {
-        {DefectRole, "defect"},
-        {PrecisionRole, "precision"},
-        {RecallRole, "recall"},
-        {F1Role, "f1"},
-        {IouRole, "iou"},
-        {ImageAccRole, "imageAcc"},
-        {IsSummaryRole, "isSummary"},
-    };
+    auto names = QAbstractTableModel::roleNames();
+    names.insert(IsSummaryRole, "isSummary");
+    return names;
 }

@@ -1,19 +1,22 @@
 #pragma once
 
-#include <QAbstractListModel>
+#include <QAbstractTableModel>
 #include <QVector>
 
-class BoxListModel : public QAbstractListModel
+// 表格模型：列走 DisplayRole，给 TableView / HorizontalHeaderView 共用列宽。
+class BoxListModel : public QAbstractTableModel
 {
     Q_OBJECT
 
 public:
-    enum Role {
-        XRole = Qt::UserRole + 1,
-        YRole,
-        WidthRole,
-        HeightRole,
-        AreaRole
+    enum Column {
+        ColNo = 0,
+        ColX,
+        ColY,
+        ColW,
+        ColH,
+        ColArea,
+        ColumnCount
     };
 
     struct Row {
@@ -30,8 +33,9 @@ public:
     void clear();
 
     int rowCount(const QModelIndex& parent = {}) const override;
+    int columnCount(const QModelIndex& parent = {}) const override;
     QVariant data(const QModelIndex& index, int role) const override;
-    QHash<int, QByteArray> roleNames() const override;
+    QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
 
 private:
     QVector<Row> m_rows;

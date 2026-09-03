@@ -52,7 +52,7 @@ Rectangle {
             Layout.fillHeight: true
             currentIndex: app.inspectorTab
 
-            // 当前
+            // 当前：判定优先，分数与框表退到后面
             ColumnLayout {
                 anchors.margins: 0
                 Item {
@@ -62,6 +62,36 @@ Rectangle {
                         anchors.fill: parent
                         anchors.margins: 12
                         spacing: 10
+
+                        Rectangle {
+                            visible: app.hasImage
+                            Layout.fillWidth: true
+                            implicitHeight: 80
+                            radius: Theme.radius
+                            color: app.detected ? Theme.dangerDim : Theme.accentDim
+                            border.width: 1
+                            border.color: app.detected ? Theme.danger : Theme.accent
+                            Column {
+                                anchors.centerIn: parent
+                                spacing: 2
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    text: app.detected ? "不合格" : "合格"
+                                    color: app.detected ? Theme.danger : Theme.accent
+                                    font.pixelSize: 28
+                                    font.bold: true
+                                    font.family: Theme.fontFamily
+                                }
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    text: "检出 " + app.defectCount + " 处"
+                                    color: Theme.textPrimary
+                                    font.pixelSize: Theme.bodySize
+                                    font.family: Theme.fontFamily
+                                }
+                            }
+                        }
+
                         Text {
                             text: app.imageInfo
                             color: Theme.textPrimary
@@ -75,25 +105,14 @@ Rectangle {
                             implicitHeight: 40
                         }
                         Text {
-                            text: app.scoreRuleText
+                            visible: app.hasImage
+                            text: "判定依据  分 " + Number(app.imageScore).toFixed(4)
+                                  + "  /  阈 " + Number(app.imageThreshold).toFixed(4)
                             color: Theme.textSecondary
                             font.pixelSize: Theme.smallSize
                             font.family: Theme.fontFamily
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
-                        }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 8
-                            StatTile { Layout.fillWidth: true; label: "缺陷框"; value: app.hasImage ? String(app.defectCount) : "—" }
-                            StatTile { Layout.fillWidth: true; label: "总面积"; value: app.hasImage ? Number(app.totalArea).toFixed(0) : "—" }
-                            StatTile { Layout.fillWidth: true; label: "叠加面积门"; value: app.hasImage ? String(app.minImageArea) : "—" }
-                        }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 8
-                            StatTile { Layout.fillWidth: true; label: "图像分"; value: app.hasImage ? Number(app.imageScore).toFixed(4) : "—" }
-                            StatTile { Layout.fillWidth: true; label: "判定阈值"; value: app.hasImage ? Number(app.imageThreshold).toFixed(4) : "—" }
                         }
                         BoxTable { Layout.fillWidth: true; Layout.fillHeight: true }
                         AppButton {
@@ -142,7 +161,7 @@ Rectangle {
                         title: "还没有批量指标"
                         subtitle: app.engineKind === 1 && !app.modelAvailable
                                   ? "当前类别没有 ONNX，先放到约定路径或改用传统 CV。"
-                                  : "先对当前类别跑批量，才能看到本引擎的 P / R / F1。"
+                                  : "先对当前类别跑批量，才能看到精确率、召回率和综合分。"
                     }
                 }
             }
