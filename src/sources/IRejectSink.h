@@ -15,7 +15,8 @@ struct RejectContext
     bool lateEject = false;
 };
 
-// 剔除机构抽象。本阶段打日志+落盘；P4 换成实 DO，不改 InspectionSession。
+// 剔除机构抽象。本阶段：日志 + 落盘 + 模拟 PLC/DO 点表。
+// P4 再实现一个真实 DO 的 IRejectSink 加进 CompositeRejectSink，不改 InspectionSession。
 class IRejectSink
 {
 public:

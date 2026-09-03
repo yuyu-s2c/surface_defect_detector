@@ -9,7 +9,9 @@
 #include "sources/FileRejectSink.h"
 #include "sources/FolderSource.h"
 #include "sources/LogRejectSink.h"
+#include "sources/SimulatedDoSink.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -30,9 +32,11 @@ MainViewModel::MainViewModel(QObject* parent)
     , m_metricsModel(new MetricsListModel(this))
     , m_compareModel(new CompareListModel(this))
     , m_ngModel(new NgListModel(this))
+    , m_doPulseModel(new DoPulseModel(this))
 {
     m_appliedCv = m_cv;
     m_appliedDl = m_dl;
+    loadStationSettings();
 
     connect(&m_ctrl, &DetectionController::progressChanged,
             this, &MainViewModel::onProgress);
@@ -83,19 +87,20 @@ QString MainViewModel::scoreRuleText() const
 QString MainViewModel::aboutBody() const
 {
     return QStringLiteral(
-        "离线质检工作站：文件夹图源、模拟取流、班次剔除落盘、批量评估、PNG/CSV 导出、传统 CV 与 EfficientAD 双引擎。\n\n"
+        "离线质检工作站：文件夹图源、模拟取流、班次剔除落盘、模拟 PLC/DO 点表、批量评估、PNG/CSV 导出、传统 CV 与 EfficientAD 双引擎。\n\n"
         "深度学习用本地 ONNX（默认 DirectML，失败回 CPU），不会联网、不会训练。"
         "权重约定：models/<类别>/weights/onnx/<类别>.onnx。"
         "首次对该执行器标定会扫描 train/good 并写入同目录 .calib.json（v3，按 EP 分键），之后复用缓存。\n\n"
         "图像级判定是分数过线，不是掩码面积。面积门只影响绿叠加和 --batch 对照列。\n\n"
-        "本机未接相机 / PLC（Phase 4）。取流是 FolderSource 按设定帧率吐当前类 test/。"
-        "不合格会写入数据集根 _sessions/（叠图 + CSV），停流后可在右侧结果轨回看。");
+        "本机相机离线 / 未接 PLC（Phase 4）。取流只走 FolderSource 按设定帧率吐当前类 test/，不会启动 CameraSource、不发假直播。"
+        "不合格走 CompositeRejectSink：日志 + _sessions/ 叠图 CSV + 模拟 DO0.0 脉冲（do_map.csv / do_pulses.csv）。"
+        "连续不合格可联锁停线。实机到货只换 CameraSource 并再加一个真实 DO 的 IRejectSink。");
 }
 
 QString MainViewModel::shortcutsHelp() const
 {
     return QStringLiteral(
-        "空格 开始/停止取流    Esc 停止取流    B 批量    Shift+C 对比引擎\n"
+        "空格 开自检/停止取流    Esc 停止取流    B 批量    Shift+C 对比引擎\n"
         "1 传统 CV    2 EfficientAD    G 真值叠加    D 检测叠加    F 适应画面\n"
         "I 检测台    A 分析台    Ctrl+O 打开数据集    Ctrl+E 导出当前图\n"
         "Ctrl+Shift+E 导出批量    F1 关于");
@@ -262,6 +267,10 @@ bool MainViewModel::canStartLive() const
         return false;
     if (currentKind() == EngineKind::DL && dlEngineBlocked(m_currentCategory))
         return false;
+    if (currentKind() == EngineKind::Traditional && m_ctrl.trainGoodCount(m_currentCategory) <= 0)
+        return false;
+    if (testImageCount(m_currentCategory) <= 0)
+        return false;
     return true;
 }
 
@@ -273,6 +282,211 @@ bool MainViewModel::canExportBatch() const
 bool MainViewModel::canExportLive() const
 {
     return !m_liveRunning && !m_liveStarting && !m_liveSessionDir.isEmpty();
+}
+
+QString MainViewModel::cameraStatusText() const
+{
+    return QStringLiteral("相机离线");
+}
+
+QString MainViewModel::sourceStatusText() const
+{
+    if (m_liveRunning)
+        return QStringLiteral("模拟取流中 · FolderSource");
+    return QStringLiteral("模拟取流 · FolderSource");
+}
+
+QString MainViewModel::plcStatusText() const
+{
+    return QStringLiteral("模拟 PLC · DO0.0");
+}
+
+double MainViewModel::liveYieldPercent() const
+{
+    const int n = m_liveOkCount + m_liveNgCount;
+    if (n <= 0)
+        return 0.0;
+    return 100.0 * double(m_liveOkCount) / double(n);
+}
+
+int MainViewModel::testImageCount(const QString& category) const
+{
+    if (category.isEmpty())
+        return 0;
+    int n = 0;
+    const QStringList defects = m_ctrl.dataset().defectTypes(category);
+    for (const QString& d : defects)
+        n += m_ctrl.dataset().testImages(category, d).size();
+    return n;
+}
+
+void MainViewModel::loadStationSettings()
+{
+    QSettings s;
+    s.beginGroup(QStringLiteral("station"));
+    m_workOrder = s.value(QStringLiteral("workOrder")).toString();
+    m_operatorName = s.value(QStringLiteral("operatorName")).toString();
+    const int limit = s.value(QStringLiteral("consecutiveNgLimit"), 8).toInt();
+    m_consecutiveNgLimit = qBound(0, limit, 200);
+    if (m_workOrder.isEmpty())
+        m_workOrder = QStringLiteral("WO-%1").arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd")));
+}
+
+void MainViewModel::saveStationSettings()
+{
+    QSettings s;
+    s.beginGroup(QStringLiteral("station"));
+    s.setValue(QStringLiteral("workOrder"), m_workOrder);
+    s.setValue(QStringLiteral("operatorName"), m_operatorName);
+    s.setValue(QStringLiteral("consecutiveNgLimit"), m_consecutiveNgLimit);
+}
+
+void MainViewModel::setWorkOrder(const QString& v)
+{
+    const QString t = v.trimmed();
+    if (m_workOrder == t)
+        return;
+    m_workOrder = t;
+    saveStationSettings();
+    emit recipeChanged();
+}
+
+void MainViewModel::setOperatorName(const QString& v)
+{
+    const QString t = v.trimmed();
+    if (m_operatorName == t)
+        return;
+    m_operatorName = t;
+    saveStationSettings();
+    emit recipeChanged();
+}
+
+void MainViewModel::setConsecutiveNgLimit(int n)
+{
+    n = qBound(0, n, 200);
+    if (m_consecutiveNgLimit == n)
+        return;
+    m_consecutiveNgLimit = n;
+    saveStationSettings();
+    emit recipeChanged();
+}
+
+void MainViewModel::rebuildSelfCheck()
+{
+    m_selfCheckItems.clear();
+    m_selfCheckPassed = true;
+    auto add = [this](const QString& title, const QString& detail, bool ok) {
+        m_selfCheckItems.push_back(QVariantMap{
+            {QStringLiteral("title"), title},
+            {QStringLiteral("detail"), detail},
+            {QStringLiteral("ok"), ok},
+        });
+        if (!ok)
+            m_selfCheckPassed = false;
+    };
+
+    add(QStringLiteral("相机"),
+        QStringLiteral("离线。本工位不启动 CameraSource，不发假直播。Phase 4 只换该类。"),
+        true);
+
+    const int planned = testImageCount(m_currentCategory);
+    if (m_currentCategory.isEmpty()) {
+        add(QStringLiteral("图源"),
+            QStringLiteral("未选类别，无法用 FolderSource 模拟取流。"),
+            false);
+    } else if (planned <= 0) {
+        add(QStringLiteral("图源"),
+            QStringLiteral("%1 的 test/ 为空。").arg(folderDisplayName(m_currentCategory)),
+            false);
+    } else {
+        add(QStringLiteral("图源"),
+            QStringLiteral("FolderSource · %1 · test/ %2 张 · %3 帧/秒")
+                .arg(folderDisplayName(m_currentCategory))
+                .arg(planned)
+                .arg(m_liveTargetFps),
+            true);
+    }
+
+    if (currentKind() == EngineKind::DL) {
+        if (dlEngineBlocked(m_currentCategory)) {
+            add(QStringLiteral("模型"), missingDlReason(m_currentCategory), false);
+        } else {
+            const QString calib = m_ctrl.hasCalibCache(m_currentCategory)
+                ? QStringLiteral("已有 .calib.json，加载时复用")
+                : QStringLiteral("首次将扫描 train/good 标定（不是训练）");
+            add(QStringLiteral("模型"),
+                QStringLiteral("EfficientAD · %1 · %2")
+                    .arg(m_ctrl.ortEpPolicyLabel(), calib),
+                true);
+        }
+    } else {
+        const int good = m_currentCategory.isEmpty() ? 0 : m_ctrl.trainGoodCount(m_currentCategory);
+        add(QStringLiteral("模型"),
+            good > 0
+                ? QStringLiteral("传统 CV · train/good %1 张参考").arg(good)
+                : QStringLiteral("train/good 为空，传统引擎无法构建参考。"),
+            good > 0);
+    }
+
+    const QString outDir = m_datasetRoot.isEmpty()
+        ? QStringLiteral("（先打开数据集根）")
+        : (m_datasetRoot + QStringLiteral("/_sessions/"));
+    add(QStringLiteral("剔除输出"),
+        QStringLiteral("模拟 DO0.0 脉冲 + 日志 + %1（叠图 / CSV / do_map.csv）").arg(outDir),
+        !m_datasetRoot.isEmpty());
+
+    QString recipe = m_workOrder.isEmpty()
+        ? QStringLiteral("工单将按日期自动生成")
+        : QStringLiteral("工单 %1").arg(m_workOrder);
+    if (!m_operatorName.isEmpty())
+        recipe += QStringLiteral(" · 操作员 %1").arg(m_operatorName);
+    add(QStringLiteral("配方"), recipe, true);
+
+    add(QStringLiteral("联锁"),
+        m_consecutiveNgLimit > 0
+            ? QStringLiteral("连续不合格 %1 张停线（--live-smoke 默认关闭，保证跑完一类）")
+                  .arg(m_consecutiveNgLimit)
+            : QStringLiteral("连续不合格联锁已关，将跑完 FolderSource playlist"),
+        true);
+
+    m_selfCheckHint = m_selfCheckPassed
+        ? QStringLiteral("确认后开始模拟产线。相机保持离线。")
+        : QStringLiteral("自检未过，先处理红色项。");
+    emit selfCheckChanged();
+}
+
+void MainViewModel::requestStartLive()
+{
+    if (m_liveRunning || m_liveStarting) {
+        stopLive();
+        return;
+    }
+    rebuildSelfCheck();
+    emit selfCheckRequested();
+}
+
+void MainViewModel::confirmStartLive()
+{
+    rebuildSelfCheck();
+    if (!m_selfCheckPassed) {
+        raiseError(m_selfCheckHint);
+        return;
+    }
+    startLive();
+}
+
+void MainViewModel::appendDoPulse(const LiveInspectedFrame& frame)
+{
+    DoPulseModel::Record rec;
+    rec.seq = m_doPulseModel->count() + 1;
+    rec.point = QString::fromLatin1(SimulatedDoSink::kRejectPoint);
+    rec.action = QStringLiteral("REJECT");
+    rec.pulseMs = SimulatedDoSink::kPulseMs;
+    rec.fileName = QFileInfo(frame.path).fileName();
+    rec.defectLabel = folderDisplayName(frame.defectType);
+    rec.latencyMs = frame.latencyMs;
+    rec.lateEject = frame.lateEject;
+    m_doPulseModel->append(rec);
 }
 
 EngineKind MainViewModel::currentKind() const
@@ -823,11 +1037,17 @@ void MainViewModel::startLive()
     if (!canStartLive()) {
         if (m_currentCategory.isEmpty())
             raiseError(QStringLiteral("请先选择一个类别"));
+        else if (currentKind() == EngineKind::DL && dlEngineBlocked(m_currentCategory))
+            raiseError(missingDlReason(m_currentCategory));
+        else
+            raiseError(QStringLiteral("无法开始模拟取流（缺测试图或良品参考）"));
         return;
     }
-    if (currentKind() == EngineKind::DL && dlEngineBlocked(m_currentCategory)) {
-        raiseError(missingDlReason(m_currentCategory));
-        return;
+    if (m_workOrder.trimmed().isEmpty()) {
+        m_workOrder = QStringLiteral("WO-%1")
+                          .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmm")));
+        saveStationSettings();
+        emit recipeChanged();
     }
     setWorkMode(0);
     beginLiveSession(m_currentCategory);
@@ -845,13 +1065,19 @@ void MainViewModel::beginLiveSession(const QString& category)
     m_liveMaxQueue = 0;
     m_liveMaxLatencyMs = 0;
     m_liveLastNg = false;
+    m_liveConsecutiveNg = 0;
+    m_liveTaktMs = 0;
+    m_livePlannedCount = testImageCount(category);
+    m_liveInterlocked = false;
+    m_liveStopReason.clear();
     m_hasLiveSession = false;
     m_liveSessionTitle.clear();
     m_liveSessionDir.clear();
     m_ngModel->clear();
+    m_doPulseModel->clear();
+    m_liveClock.invalidate();
     emit liveStatsChanged();
     emit liveSessionChanged();
-    Q_UNUSED(category);
 }
 
 void MainViewModel::stopLive()
@@ -864,7 +1090,7 @@ void MainViewModel::stopLive()
     emit workEnabledChanged();
     if (was) {
         setStatusTone(QStringLiteral("normal"));
-        setStatusText(QStringLiteral("已停止取流"));
+        setStatusText(QStringLiteral("已停止模拟取流"));
     }
 }
 
@@ -895,11 +1121,15 @@ void MainViewModel::onEnginePrepared(bool ok, const QString& category)
     auto composite = std::make_unique<CompositeRejectSink>();
     composite->add(std::make_unique<LogRejectSink>());
     composite->add(std::make_unique<FileRejectSink>(dir));
+    composite->add(std::make_unique<SimulatedDoSink>(dir));
     m_session.setRejectSink(std::move(composite));
-    m_session.setSessionMeta(sessionId, dir, currentEngineName(), m_providerText);
+    m_session.setConsecutiveNgLimit(m_consecutiveNgLimit);
+    m_session.setSessionMeta(sessionId, dir, currentEngineName(), m_providerText,
+                             m_workOrder, m_operatorName);
     m_liveSessionDir = dir;
-    m_liveSessionTitle = QStringLiteral("%1 · %2")
-                             .arg(folderDisplayName(category),
+    m_liveSessionTitle = QStringLiteral("%1 · %2 · %3")
+                             .arg(m_workOrder.isEmpty() ? QStringLiteral("未填工单") : m_workOrder,
+                                  folderDisplayName(category),
                                   currentKind() == EngineKind::DL
                                       ? QStringLiteral("EfficientAD")
                                       : QStringLiteral("传统 CV"));
@@ -908,16 +1138,17 @@ void MainViewModel::onEnginePrepared(bool ok, const QString& category)
 
     if (!m_session.start(std::move(src), category)) {
         emit workEnabledChanged();
-        raiseError(QStringLiteral("无法开始取流（该类别没有测试图）"));
+        raiseError(QStringLiteral("无法开始模拟取流（该类别没有测试图）"));
         return;
     }
     m_liveLatencyMs = 0;
     m_liveQueueDepth = 0;
     m_liveActualFps = 0.0;
+    m_liveClock.restart();
     emit liveStatsChanged();
     setLiveRunning(true);
     setStatusTone(QStringLiteral("ok"));
-    setStatusText(QStringLiteral("取流中 %1 @ %2 帧/秒…")
+    setStatusText(QStringLiteral("模拟取流 %1 @ %2 帧/秒（相机离线）…")
                       .arg(folderDisplayName(category)).arg(m_liveTargetFps));
     refreshStationStatus();
 }
@@ -953,6 +1184,10 @@ void MainViewModel::onLiveFrame(const LiveInspectedFrame& frame)
     m_liveLateCount = frame.lateCount;
     m_liveMaxQueue = qMax(m_liveMaxQueue, frame.queueDepth);
     m_liveMaxLatencyMs = qMax(m_liveMaxLatencyMs, int(frame.latencyMs));
+    m_liveConsecutiveNg = frame.consecutiveNg;
+    if (m_liveClock.isValid() && frame.done > 0)
+        m_liveTaktMs = int(m_liveClock.elapsed() / frame.done);
+    m_livePlannedCount = frame.total > 0 ? frame.total : m_livePlannedCount;
     emit liveStatsChanged();
 
     const QString verdict = frame.result.detected() ? QStringLiteral("不合格") : QStringLiteral("合格");
@@ -970,20 +1205,29 @@ void MainViewModel::onLiveFrame(const LiveInspectedFrame& frame)
         rec.lateEject = frame.lateEject;
         rec.result = frame.result;
         m_ngModel->append(rec);
+        appendDoPulse(frame);
     } else {
         ++m_liveOkCount;
     }
     m_liveLastNg = frame.result.detected();
+    if (frame.interlockStop) {
+        m_liveInterlocked = true;
+        m_liveStopReason = QStringLiteral("连续不合格联锁（%1 张），已停线。相机仍离线，本班走 FolderSource。")
+                               .arg(frame.consecutiveNgLimit > 0 ? frame.consecutiveNgLimit
+                                                                : m_consecutiveNgLimit);
+        emit liveSessionChanged();
+    }
     setStatusTone(m_liveLastNg ? QStringLiteral("ng") : QStringLiteral("ok"));
-    setStatusText(QStringLiteral("%1  |  %2/%3/%4（%5/%6）  |  %7 帧/秒  延迟 %8 ms")
+    setStatusText(QStringLiteral("%1  |  %2/%3/%4（%5/%6）  |  直通 %7%  节拍 %8 ms  连续NG %9")
                       .arg(verdict)
                       .arg(folderDisplayName(frame.category))
                       .arg(folderDisplayName(frame.defectType))
                       .arg(QFileInfo(frame.path).fileName())
                       .arg(frame.done)
                       .arg(frame.total)
-                      .arg(frame.actualFps, 0, 'f', 1)
-                      .arg(frame.latencyMs));
+                      .arg(liveYieldPercent(), 0, 'f', 1)
+                      .arg(m_liveTaktMs)
+                      .arg(m_liveConsecutiveNg));
 }
 
 void MainViewModel::onLiveFinished(int total, int ngCount)
@@ -991,12 +1235,27 @@ void MainViewModel::onLiveFinished(int total, int ngCount)
     m_liveStarting = false;
     applyLiveSummary(m_session.lastSummary());
     setLiveRunning(false);
-    setStatusTone(ngCount > 0 ? QStringLiteral("ng") : QStringLiteral("ok"));
-    setStatusText(QStringLiteral("取流结束：%1 张，合格 %2，不合格 %3")
-                      .arg(total)
-                      .arg(qMax(0, total - ngCount))
-                      .arg(ngCount));
-    showToast(QStringLiteral("取流结束：不合格 %1 / %2").arg(ngCount).arg(total));
+    const LiveSessionSummary s = m_session.lastSummary();
+    if (!s.stopReason.isEmpty()) {
+        m_liveInterlocked = true;
+        m_liveStopReason = s.stopReason + QStringLiteral("。相机仍离线，本班走 FolderSource。");
+        emit liveSessionChanged();
+        setStatusTone(QStringLiteral("ng"));
+        setStatusText(QStringLiteral("联锁停线：%1  |  合格 %2  不合格 %3  直通 %4%")
+                          .arg(s.stopReason)
+                          .arg(s.ok)
+                          .arg(s.ng)
+                          .arg(liveYieldPercent(), 0, 'f', 1));
+        showToast(QStringLiteral("联锁停线：%1").arg(s.stopReason));
+    } else {
+        setStatusTone(ngCount > 0 ? QStringLiteral("ng") : QStringLiteral("ok"));
+        setStatusText(QStringLiteral("模拟取流结束：%1 张，合格 %2，不合格 %3，直通 %4%")
+                          .arg(total)
+                          .arg(qMax(0, total - ngCount))
+                          .arg(ngCount)
+                          .arg(liveYieldPercent(), 0, 'f', 1));
+        showToast(QStringLiteral("模拟取流结束：不合格 %1 / %2").arg(ngCount).arg(total));
+    }
     refreshStationStatus();
 }
 
@@ -1010,6 +1269,13 @@ void MainViewModel::applyLiveSummary(const LiveSessionSummary& s)
     m_liveLateCount = s.lateEject;
     m_liveMaxQueue = s.maxQueue;
     m_liveMaxLatencyMs = int(s.maxLatencyMs);
+    m_liveConsecutiveNg = s.consecutiveNg;
+    if (s.elapsedSec > 0 && s.done > 0)
+        m_liveTaktMs = int((s.elapsedSec * 1000.0) / s.done);
+    if (!s.stopReason.isEmpty()) {
+        m_liveInterlocked = true;
+        m_liveStopReason = s.stopReason + QStringLiteral("。相机仍离线，本班走 FolderSource。");
+    }
     if (!s.sessionDir.isEmpty())
         m_liveSessionDir = s.sessionDir;
     if (!s.category.isEmpty()) {

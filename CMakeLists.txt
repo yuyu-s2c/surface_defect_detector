@@ -51,6 +51,8 @@ set(PROJECT_SOURCES
     src/sources/FileRejectSink.cpp
     src/sources/CompositeRejectSink.h
     src/sources/CompositeRejectSink.cpp
+    src/sources/SimulatedDoSink.h
+    src/sources/SimulatedDoSink.cpp
     src/sources/FolderSource.h
     src/sources/FolderSource.cpp
     src/sources/CameraSource.h
@@ -92,6 +94,9 @@ qt_add_qml_module(surface_defect_detector
         qml/components/ToastBanner.qml
         qml/components/StationBanner.qml
         qml/components/EngineStatusChip.qml
+        qml/components/StationIdentityBar.qml
+        qml/components/SelfCheckDialog.qml
+        qml/components/AppTextField.qml
     SOURCES
         src/viewmodels/MainViewModel.h
         src/viewmodels/MainViewModel.cpp
@@ -105,6 +110,8 @@ qt_add_qml_module(surface_defect_detector
         src/viewmodels/CompareListModel.cpp
         src/viewmodels/NgListModel.h
         src/viewmodels/NgListModel.cpp
+        src/viewmodels/DoPulseModel.h
+        src/viewmodels/DoPulseModel.cpp
         src/viewmodels/ImageConvert.h
         src/viewmodels/ImageConvert.cpp
         src/items/InspectionCanvas.h

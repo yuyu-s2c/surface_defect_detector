@@ -4,12 +4,14 @@
 #include "CompareListModel.h"
 #include "DatasetTreeModel.h"
 #include "DetectionController.h"
+#include "DoPulseModel.h"
 #include "EngineParams.h"
 #include "IDetectionEngine.h"
 #include "InspectionSession.h"
 #include "MetricsListModel.h"
 #include "NgListModel.h"
 
+#include <QElapsedTimer>
 #include <QImage>
 #include <QModelIndex>
 #include <QObject>
@@ -113,6 +115,23 @@ class MainViewModel : public QObject
     Q_PROPERTY(MetricsListModel* metricsModel READ metricsModel CONSTANT)
     Q_PROPERTY(CompareListModel* compareModel READ compareModel CONSTANT)
     Q_PROPERTY(NgListModel* ngModel READ ngModel CONSTANT)
+    Q_PROPERTY(DoPulseModel* doPulseModel READ doPulseModel CONSTANT)
+
+    Q_PROPERTY(QString cameraStatusText READ cameraStatusText NOTIFY stationStatusChanged)
+    Q_PROPERTY(QString sourceStatusText READ sourceStatusText NOTIFY liveRunningChanged)
+    Q_PROPERTY(QString plcStatusText READ plcStatusText CONSTANT)
+    Q_PROPERTY(QString workOrder READ workOrder WRITE setWorkOrder NOTIFY recipeChanged)
+    Q_PROPERTY(QString operatorName READ operatorName WRITE setOperatorName NOTIFY recipeChanged)
+    Q_PROPERTY(int consecutiveNgLimit READ consecutiveNgLimit WRITE setConsecutiveNgLimit NOTIFY recipeChanged)
+    Q_PROPERTY(QVariantList selfCheckItems READ selfCheckItems NOTIFY selfCheckChanged)
+    Q_PROPERTY(bool selfCheckPassed READ selfCheckPassed NOTIFY selfCheckChanged)
+    Q_PROPERTY(QString selfCheckHint READ selfCheckHint NOTIFY selfCheckChanged)
+    Q_PROPERTY(double liveYieldPercent READ liveYieldPercent NOTIFY liveStatsChanged)
+    Q_PROPERTY(int liveTaktMs READ liveTaktMs NOTIFY liveStatsChanged)
+    Q_PROPERTY(int liveConsecutiveNg READ liveConsecutiveNg NOTIFY liveStatsChanged)
+    Q_PROPERTY(QString liveStopReason READ liveStopReason NOTIFY liveSessionChanged)
+    Q_PROPERTY(bool liveInterlocked READ liveInterlocked NOTIFY liveSessionChanged)
+    Q_PROPERTY(int livePlannedCount READ livePlannedCount NOTIFY liveStatsChanged)
 
 public:
     explicit MainViewModel(QObject* parent = nullptr);
@@ -209,6 +228,23 @@ public:
     MetricsListModel* metricsModel() const { return m_metricsModel; }
     CompareListModel* compareModel() const { return m_compareModel; }
     NgListModel* ngModel() const { return m_ngModel; }
+    DoPulseModel* doPulseModel() const { return m_doPulseModel; }
+
+    QString cameraStatusText() const;
+    QString sourceStatusText() const;
+    QString plcStatusText() const;
+    QString workOrder() const { return m_workOrder; }
+    QString operatorName() const { return m_operatorName; }
+    int consecutiveNgLimit() const { return m_consecutiveNgLimit; }
+    QVariantList selfCheckItems() const { return m_selfCheckItems; }
+    bool selfCheckPassed() const { return m_selfCheckPassed; }
+    QString selfCheckHint() const { return m_selfCheckHint; }
+    double liveYieldPercent() const;
+    int liveTaktMs() const { return m_liveTaktMs; }
+    int liveConsecutiveNg() const { return m_liveConsecutiveNg; }
+    QString liveStopReason() const { return m_liveStopReason; }
+    bool liveInterlocked() const { return m_liveInterlocked; }
+    int livePlannedCount() const { return m_livePlannedCount; }
 
     Q_INVOKABLE bool loadDataset(const QUrl& folder);
     bool loadDatasetPath(const QString& path);
@@ -237,7 +273,12 @@ public:
     Q_INVOKABLE void compareEngines();
     Q_INVOKABLE void startLive();
     Q_INVOKABLE void stopLive();
+    Q_INVOKABLE void requestStartLive();
+    Q_INVOKABLE void confirmStartLive();
     void setLiveTargetFps(int fps);
+    void setWorkOrder(const QString& v);
+    void setOperatorName(const QString& v);
+    void setConsecutiveNgLimit(int n);
     Q_INVOKABLE bool exportCurrent(const QUrl& url);
     Q_INVOKABLE bool exportBatch(const QUrl& folder);
     Q_INVOKABLE bool exportLiveSession(const QUrl& folder);
@@ -273,6 +314,9 @@ signals:
     void dlParamsChanged();
     void stationStatusChanged();
     void toastMessageChanged();
+    void recipeChanged();
+    void selfCheckChanged();
+    void selfCheckRequested();
 
 private:
     EngineKind currentKind() const;
@@ -314,6 +358,11 @@ private:
 
     void applyLiveSummary(const LiveSessionSummary& s);
     void beginLiveSession(const QString& category);
+    void loadStationSettings();
+    void saveStationSettings();
+    void rebuildSelfCheck();
+    int testImageCount(const QString& category) const;
+    void appendDoPulse(const LiveInspectedFrame& frame);
 
     DetectionController m_ctrl;
     InspectionSession m_session;
@@ -322,6 +371,7 @@ private:
     MetricsListModel* m_metricsModel = nullptr;
     CompareListModel* m_compareModel = nullptr;
     NgListModel* m_ngModel = nullptr;
+    DoPulseModel* m_doPulseModel = nullptr;
 
     bool m_hasDataset = false;
     bool m_busy = false;
@@ -381,6 +431,18 @@ private:
     bool m_hasLiveSession = false;
     QString m_liveSessionTitle;
     QString m_liveSessionDir;
+    QString m_workOrder;
+    QString m_operatorName;
+    QString m_liveStopReason;
+    QVariantList m_selfCheckItems;
+    QString m_selfCheckHint;
+    int m_consecutiveNgLimit = 8;
+    int m_liveConsecutiveNg = 0;
+    int m_liveTaktMs = 0;
+    int m_livePlannedCount = 0;
+    bool m_selfCheckPassed = false;
+    bool m_liveInterlocked = false;
+    QElapsedTimer m_liveClock;
     QString m_compareCvF1;
     QString m_compareDlF1;
     QString m_compareDeltaF1;

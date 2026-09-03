@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 
-// 日志 + 落盘并行。P4 真 DO 作为再一个 sink 加进来即可。
+// 日志 + 落盘 + 模拟 DO 并行。P4 真 DO 作为再一个 sink 加进来即可，不要改 SimulatedDoSink。
 class CompositeRejectSink : public IRejectSink
 {
 public:

@@ -55,13 +55,14 @@ surface_defect_detector/
 ├── qml/                      # View：检测/分析两态（顶栏 / 左树 / 中画布 / 右结果轨或分析侧栏）
 ├── src/
 │   ├── main.cpp                # 入口；--batch / --live-smoke 走 QCoreApplication，GUI 走 QGuiApplication
-│   ├── viewmodels/             # ViewModel：MainViewModel + 树/框/指标/对比/NG 列表
+│   ├── viewmodels/             # ViewModel：MainViewModel + 树/框/指标/对比/NG/模拟 DO 列表
 │   ├── items/InspectionCanvas  # QQuickPaintedItem 看图：缩放平移，GT/检测叠加
 │   ├── DetectionController.h/.cpp # 应用服务层：数据集 + 引擎缓存 + 批量编排（GUI/CLI 共用）
 │   ├── InspectionSession.h/.cpp   # 取流：有界队列 + 取流/检测双线程 + 班次摘要
 │   ├── LiveSessionTypes.h         # 班次摘要 / 工件记录（session.csv）
 │   ├── sources/                # IFrameSource / FolderSource / CameraSource（空）
-│   │                           # IRejectSink / LogRejectSink / FileRejectSink / CompositeRejectSink
+│   │                           # IRejectSink / LogRejectSink / FileRejectSink /
+│   │                           # SimulatedDoSink（点表+脉冲日志） / CompositeRejectSink
 │   ├── IDetectionEngine.h      # 检测引擎抽象接口 + DetectionResult 输出契约
 │   ├── DetectionEngine.h/.cpp  # 传统 CV 检测引擎（v0.1 基线，IDetectionEngine 实现）
 │   ├── DLDetectionEngine.h/.cpp # EfficientAD ONNX（P2；3.6 DirectML + 图像级分数过线）
@@ -84,7 +85,7 @@ surface_defect_detector/
 QML 不接触 `cv::Mat` 与引擎实例。GUI 的引擎加载 / 标定 / 单张推理 / 批量走
 DetectionController 工作线程，进度在画布蒙层与底栏；`--batch` 仍同步，口径不变。
 取流走 `InspectionSession`（有界队列 + 同步 `detect()`），NG 走 `IRejectSink`
-（日志 + `_sessions/` 落盘）。GUI 分检测 / 分析两态：检测态右侧是结果轨（判定 + 班次），
+（日志 + `_sessions/` 落盘 + 模拟 DO 点表）。GUI 分检测 / 分析两态：检测态右侧是结果轨（判定 + 班次），
 分析态是参数 / 指标 / 对比。
 
 ### 关键接口契约（迭代时保持兼容）
@@ -381,12 +382,39 @@ P4 仍等实机。本阶段把取流从「日志计数、停了就没了」收�
 
 回归未漂：`--batch metal_nut` 图像级 58/115、F1 0.2926；`--batch metal_nut --engine dl` 分数口径 108/115、F1 0.269。
 
+### 离线工位闭环（面试演示，无新阶段号）
+
+P4 仍等实机。在 3.7 班次骨架上补一条可演示的产线回路，**不改算法、P2 工作点、`--batch` 口径，不接相机/PLC，不训练**。本云环境是 Linux，没有 MinGW/Qt/DirectML，未在此跑 Windows `--batch` / `--live-smoke`，指标表不更新。请在 Windows 本机按 README「无相机 5 分钟演示」与下方命令验证。
+
+做了：
+
+- HMI 顶栏固定显示 **相机离线 / 模拟取流 FolderSource / 模拟 PLC·DO0.0**，不把 `CameraSource` 当假直播
+- 开线前自检（相机、图源、模型/标定、输出目录、工单、连续 NG 联锁）；确认后才 `prepareEngine` + FolderSource
+- 工单 / 操作员 / 连续 NG 阈值走 QSettings `station/`，不进 `--batch`
+- 右侧结果轨：直通率、节拍、连续 NG 条、模拟 DO 脉冲列表
+- `SimulatedDoSink`：班次目录写 `do_map.csv`（点表）+ `do_pulses.csv`（脉冲），日志 `[PLC-SIM]`；明确不是实 PLC
+- `InspectionSession` 连续不合格联锁（默认 GUI=8；`--live-smoke` 保持 0 才能跑完一类 test）
+
+明确没做：Phase 4 仍只是换 `CameraSource` + 再加一个真实 DO 的 `IRejectSink`。`CameraSource::start()` 继续失败并写明相机离线。
+
+验证（Windows 本机，本变更后必跑）：
+
+```bash
+./build/surface_defect_detector.exe --batch metal_nut
+./build/surface_defect_detector.exe --batch metal_nut --engine dl
+./build/surface_defect_detector.exe --live-smoke metal_nut --engine dl --fps 5
+# 改了队列策略时另跑：
+./build/surface_defect_detector.exe --live-smoke metal_nut --engine dl --fps 15 --overflow drop
+```
+
+`--live-smoke` 联锁关闭，应仍跑完一类 test 后退出 0；班次目录多 `do_map.csv`，有 NG 时有 `do_pulses.csv`。
+
 ### Phase 4 产线对接（远期，等实机）
 
-依赖 3.6 的 DirectML、图像级分数、`IFrameSource`，以及 3.7 的 Sink / 丢最旧帧。到货后再填，不在本阶段预写协议：
+依赖 3.6 的 DirectML、图像级分数、`IFrameSource`，以及 3.7 的 Sink / 丢最旧帧 / 模拟 DO。到货后再填，不在本阶段预写协议：
 
 - `CameraSource`：海康 MVS / MVD 实时取流（本机已装运行时）；`overflowPolicy()` 已返回 `DropOldest`
-- 与 PLC / 剔除机构联动（再实现一个 `IRejectSink`，加进 `CompositeRejectSink`）
+- 与 PLC / 剔除机构联动（再实现一个真实 DO 的 `IRejectSink`，加进 `CompositeRejectSink`；不要改 `SimulatedDoSink` 当协议）
 
 ## 5. 工程规范
 

@@ -10,7 +10,8 @@
 数据集为 MVTec AD（metal_nut、screw，无监督设定：train/ 只有良品）。
 训练说明见 tools/training/TRAINING_NOTES.md。Phase 3.6（DirectML / 图像级分数过线 /
 新类别零改代码接入 / 模拟取流）与 Phase 3.7（班次落盘 / 检测·分析两态 / 丢最旧帧策略）已完成。
-Phase 4（相机/PLC）等实机，只换 `CameraSource` 并加一个 `IRejectSink`。
+离线工位闭环（开线自检 / 模拟 DO 点表 / 节拍直通率 / 连续 NG 联锁）已补上，相机仍离线。
+Phase 4（相机/PLC）等实机，只换 `CameraSource` 并加一个真实 DO 的 `IRejectSink`。
 
 ## 构建与运行
 
@@ -58,7 +59,8 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
 - **分层**：QML View（qml/）只绑属性/命令；MainViewModel 是 GUI 状态层（选图、参数、
   QImage 叠加、QSettings）；DetectionController 是应用服务层（数据集 + 引擎缓存 +
   批量编排，GUI 与 --batch 共用）。取流是 `InspectionSession`（`IFrameSource` +
-  有界队列），同步 `detect()`，不走 `*Async`。NG 走 `IRejectSink`（日志 + `_sessions/`）。
+  有界队列），同步 `detect()`，不走 `*Async`。NG 走 `IRejectSink`（日志 + `_sessions/` +
+  模拟 DO 点表）。
   不要把 Controller / cv::Mat / Session 暴露给 QML。GUI 分检测/分析两态，耗时路径走
   Controller 工作线程 + 画布蒙层/底栏进度；`--batch` 仍同步，不读 QSettings。
   左栏数据集树用官方 `TreeViewDelegate`，点叶子节点经 `selectFromModelIndex` 加载。

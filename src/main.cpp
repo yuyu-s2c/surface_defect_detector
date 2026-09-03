@@ -7,6 +7,7 @@
 #include "sources/FileRejectSink.h"
 #include "sources/FolderSource.h"
 #include "sources/LogRejectSink.h"
+#include "sources/SimulatedDoSink.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -265,7 +266,9 @@ static int runLiveSmoke(const QString& categoryArg, EngineKind engineKind, OrtEp
     auto composite = std::make_unique<CompositeRejectSink>();
     composite->add(std::make_unique<LogRejectSink>());
     composite->add(std::make_unique<FileRejectSink>(sessionDir));
+    composite->add(std::make_unique<SimulatedDoSink>(sessionDir));
     session.setRejectSink(std::move(composite));
+    session.setConsecutiveNgLimit(0);
     session.setSessionMeta(sessionId, sessionDir, engineName,
                            engineKind == EngineKind::DL
                                ? ctrl.ortEpPolicyLabel()
@@ -361,8 +364,13 @@ static int runLiveSmoke(const QString& categoryArg, EngineKind engineKind, OrtEp
         return 2;
     }
     if (!QFileInfo::exists(sessionDir + QStringLiteral("/session.csv"))
-        || !QFileInfo::exists(sessionDir + QStringLiteral("/rejects.csv"))) {
-        out << "ERROR: 未写出 session.csv / rejects.csv\n";
+        || !QFileInfo::exists(sessionDir + QStringLiteral("/rejects.csv"))
+        || !QFileInfo::exists(sessionDir + QStringLiteral("/do_map.csv"))) {
+        out << "ERROR: 未写出 session.csv / rejects.csv / do_map.csv\n";
+        return 2;
+    }
+    if (finishedNg > 0 && !QFileInfo::exists(sessionDir + QStringLiteral("/do_pulses.csv"))) {
+        out << "ERROR: 有不合格但未写出 do_pulses.csv\n";
         return 2;
     }
     out.flush();

@@ -35,6 +35,9 @@ struct LiveInspectedFrame
     int dropped = 0;
     int lateCount = 0;
     bool lateEject = false;
+    int consecutiveNg = 0;
+    int consecutiveNgLimit = 0;
+    bool interlockStop = false;
 };
 
 class InspectionSession : public QObject
@@ -56,7 +59,10 @@ public:
     // 在 start() 前注入。空则只用日志 sink。
     void setRejectSink(std::unique_ptr<IRejectSink> sink);
     void setSessionMeta(const QString& sessionId, const QString& sessionDir,
-                        const QString& engineName, const QString& provider);
+                        const QString& engineName, const QString& provider,
+                        const QString& workOrder = {}, const QString& operatorName = {});
+    // 连续不合格联锁。0 = 关闭（--live-smoke 必须保持 0，才能跑完一类 test）。
+    void setConsecutiveNgLimit(int n);
 
     // source 所有权转给 session。调用方须已 prepareEngine。
     bool start(std::unique_ptr<IFrameSource> source, const QString& category);
@@ -100,9 +106,14 @@ private:
     QString m_sessionDir;
     QString m_engineName;
     QString m_provider;
+    QString m_workOrder;
+    QString m_operatorName;
+    QString m_stopReason;
     QueueOverflowPolicy m_overflow = QueueOverflowPolicy::Block;
     int m_targetFps = kDefaultFps;
     int m_ejectWindowMs = 200;
+    int m_consecutiveNgLimit = 0;
+    int m_consecutiveNg = 0;
     int m_total = 0;
     int m_done = 0;
     int m_ng = 0;
@@ -119,5 +130,6 @@ private:
     std::atomic<bool> m_abort{false};
     std::atomic<bool> m_sourceFinished{false};
     std::atomic<bool> m_stopping{false};
+    std::atomic<bool> m_interlock{false};
     std::atomic<quint64> m_sessionGen{0};
 };

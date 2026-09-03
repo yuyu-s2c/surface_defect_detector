@@ -2,7 +2,7 @@
 
 #include "sources/IRejectSink.h"
 
-// 虚拟 DO：NG 打一行 qInfo，便于本阶段看剔除信号。
+// 控制台剔除日志（[DO] REJECT）。面试看点表请用 SimulatedDoSink，不要把本类当 PLC。
 class LogRejectSink : public IRejectSink
 {
 public:
