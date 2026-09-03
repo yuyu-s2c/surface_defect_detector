@@ -2,7 +2,11 @@
 #include "InspectionSession.h"
 #include "MainViewModel.h"
 #include "ResultEvaluator.h"
+#include "ResultExporter.h"
+#include "sources/CompositeRejectSink.h"
+#include "sources/FileRejectSink.h"
 #include "sources/FolderSource.h"
+#include "sources/LogRejectSink.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -207,7 +211,8 @@ static int runBatch(const QString& categoryArg, EngineKind engineKind, OrtEpKind
 }
 
 // 无头冒烟：FolderSource 跑完一类 test，打印帧率/延迟/队列后退出。不是产品 --live。
-static int runLiveSmoke(const QString& categoryArg, EngineKind engineKind, OrtEpKind epKind, int fps)
+static int runLiveSmoke(const QString& categoryArg, EngineKind engineKind, OrtEpKind epKind,
+                        int fps, QueueOverflowPolicy overflow)
 {
     QTextStream out(stdout);
 
@@ -248,31 +253,51 @@ static int runLiveSmoke(const QString& categoryArg, EngineKind engineKind, OrtEp
     auto src = std::make_unique<FolderSource>();
     src->setFromDataset(ctrl.dataset(), category);
     src->setFps(fps);
+    src->setOverflowPolicy(overflow);
     const int planned = src->plannedCount();
+    const QString engineName = engineKind == EngineKind::DL
+        ? QStringLiteral("dl") : QStringLiteral("cv");
+    QString sessionId;
+    const QString sessionDir = ResultExporter::makeSessionDir(
+        datasetRoot, category, engineName, &sessionId);
 
     InspectionSession session(ctrl);
+    auto composite = std::make_unique<CompositeRejectSink>();
+    composite->add(std::make_unique<LogRejectSink>());
+    composite->add(std::make_unique<FileRejectSink>(sessionDir));
+    session.setRejectSink(std::move(composite));
+    session.setSessionMeta(sessionId, sessionDir, engineName,
+                           engineKind == EngineKind::DL
+                               ? ctrl.ortEpPolicyLabel()
+                               : QStringLiteral("OpenCV CPU"));
+
     int lastDone = 0;
     int lastQueue = 0;
     qint64 lastLatency = 0;
     double lastFps = 0.0;
     qint64 maxLatency = 0;
     int maxQueue = 0;
+    int lastDropped = 0;
+    int lastLate = 0;
     QObject::connect(&session, &InspectionSession::frameInspected, &session,
                      [&](const LiveInspectedFrame& f) {
         lastDone = f.done;
         lastQueue = f.queueDepth;
         lastLatency = f.latencyMs;
         lastFps = f.actualFps;
+        lastDropped = f.dropped;
+        lastLate = f.lateCount;
         maxLatency = qMax(maxLatency, f.latencyMs);
         maxQueue = qMax(maxQueue, f.queueDepth);
         if (f.done == 1 || f.done == planned || (f.done % 25) == 0) {
-            out << QStringLiteral("  %1/%2 %3 fps queue=%4 latency=%5 ms %6\n")
+            out << QStringLiteral("  %1/%2 %3 fps queue=%4 latency=%5 ms %6%7\n")
                        .arg(f.done)
                        .arg(f.total)
                        .arg(f.actualFps, 0, 'f', 1)
                        .arg(f.queueDepth)
                        .arg(f.latencyMs)
-                       .arg(f.result.detected() ? QStringLiteral("NG") : QStringLiteral("OK"));
+                       .arg(f.result.detected() ? QStringLiteral("NG") : QStringLiteral("OK"))
+                       .arg(f.lateEject ? QStringLiteral(" LATE") : QString());
             out.flush();
         }
     });
@@ -292,9 +317,13 @@ static int runLiveSmoke(const QString& categoryArg, EngineKind engineKind, OrtEp
         loop.quit();
     });
 
+    const QString overflowName = overflow == QueueOverflowPolicy::DropOldest
+        ? QStringLiteral("drop") : QStringLiteral("block");
     out << "live-smoke " << category
-        << " engine=" << (engineKind == EngineKind::DL ? QStringLiteral("dl") : QStringLiteral("cv"))
-        << " fps=" << fps << " frames=" << planned << "\n";
+        << " engine=" << engineName
+        << " fps=" << fps
+        << " overflow=" << overflowName
+        << " frames=" << planned << "\n";
     out.flush();
 
     QElapsedTimer wall;
@@ -306,14 +335,17 @@ static int runLiveSmoke(const QString& categoryArg, EngineKind engineKind, OrtEp
     loop.exec();
     session.stop();
     const double elapsed = wall.elapsed() / 1000.0;
+    const LiveSessionSummary sum = session.lastSummary();
 
     if (finishedTotal < 0) {
         out << "ERROR: 取流未正常结束\n";
         return 2;
     }
-    out << QStringLiteral("done=%1 ng=%2 elapsed=%3 s effective=%4 fps\n")
+    out << QStringLiteral("done=%1 ng=%2 dropped=%3 late=%4 elapsed=%5 s effective=%6 fps\n")
                .arg(finishedTotal)
                .arg(finishedNg)
+               .arg(sum.dropped > 0 ? sum.dropped : lastDropped)
+               .arg(sum.lateEject > 0 ? sum.lateEject : lastLate)
                .arg(elapsed, 0, 'f', 2)
                .arg(finishedTotal > 0 && elapsed > 0 ? finishedTotal / elapsed : 0.0, 0, 'f', 2);
     out << QStringLiteral("last: actual=%1 fps queue=%2 latency=%3 ms; max queue=%4 max latency=%5 ms\n")
@@ -322,8 +354,15 @@ static int runLiveSmoke(const QString& categoryArg, EngineKind engineKind, OrtEp
                .arg(lastLatency)
                .arg(maxQueue)
                .arg(maxLatency);
-    if (finishedTotal != planned) {
+    out << "session=" << sessionDir << "\n";
+    const bool dropMode = overflow == QueueOverflowPolicy::DropOldest;
+    if (!dropMode && finishedTotal != planned) {
         out << "ERROR: 未跑完（计划 " << planned << " 张，实际 " << finishedTotal << "）\n";
+        return 2;
+    }
+    if (!QFileInfo::exists(sessionDir + QStringLiteral("/session.csv"))
+        || !QFileInfo::exists(sessionDir + QStringLiteral("/rejects.csv"))) {
+        out << "ERROR: 未写出 session.csv / rejects.csv\n";
         return 2;
     }
     out.flush();
@@ -417,7 +456,8 @@ int main(int argc, char* argv[])
         const int catIdx = liveSmokeIdx >= 0 ? liveSmokeIdx : batchIdx;
         if (catIdx + 1 >= raw.size()) {
             QTextStream(stderr) << "用法: surface_defect_detector --batch|--live-smoke <类别>"
-                                   " [--engine cv|dl] [--provider auto|cpu|dml] [--fps N]\n";
+                                   " [--engine cv|dl] [--provider auto|cpu|dml] [--fps N]"
+                                   " [--overflow block|drop]\n";
             return 2;
         }
         EngineKind engineKind = EngineKind::Traditional;
@@ -460,8 +500,23 @@ int main(int argc, char* argv[])
                 return 2;
             }
         }
+        QueueOverflowPolicy overflow = QueueOverflowPolicy::Block;
+        const int overflowIdx = raw.indexOf(QStringLiteral("--overflow"));
+        if (overflowIdx >= 0) {
+            if (overflowIdx + 1 >= raw.size()) {
+                QTextStream(stderr) << "用法: --overflow block|drop\n";
+                return 2;
+            }
+            const QString v = raw.at(overflowIdx + 1);
+            if (v == QStringLiteral("drop"))
+                overflow = QueueOverflowPolicy::DropOldest;
+            else if (v != QStringLiteral("block")) {
+                QTextStream(stderr) << "未知 --overflow: " << v << "（可选 block|drop）\n";
+                return 2;
+            }
+        }
         if (liveSmokeIdx >= 0)
-            return runLiveSmoke(raw.at(catIdx + 1), engineKind, epKind, fps);
+            return runLiveSmoke(raw.at(catIdx + 1), engineKind, epKind, fps, overflow);
         return runBatch(raw.at(catIdx + 1), engineKind, epKind);
     }
 

@@ -7,9 +7,6 @@ Rectangle {
     property bool busy: false
     property int current: 0
     property int total: 0
-    property int liveOk: 0
-    property int liveNg: 0
-    property bool liveRunning: false
 
     color: Theme.bgPanel
     height: 32
@@ -39,7 +36,7 @@ Rectangle {
         anchors.left: parent.left
         anchors.leftMargin: 14
         anchors.verticalCenter: parent.verticalCenter
-        anchors.right: pills.left
+        anchors.right: bar.left
         anchors.rightMargin: 12
         text: root.statusText
         color: root.tone === "ng" ? Theme.danger
@@ -47,29 +44,6 @@ Rectangle {
         font.pixelSize: Theme.smallSize
         font.family: Theme.fontFamily
         elide: Text.ElideRight
-    }
-
-    Row {
-        id: pills
-        anchors.right: bar.left
-        anchors.rightMargin: root.busy ? 12 : 14
-        anchors.verticalCenter: parent.verticalCenter
-        spacing: 8
-        visible: root.liveRunning
-        Text {
-            text: "合格 " + root.liveOk
-            color: Theme.accent
-            font.pixelSize: Theme.smallSize
-            font.family: Theme.fontFamily
-            font.bold: true
-        }
-        Text {
-            text: "不合格 " + root.liveNg
-            color: Theme.danger
-            font.pixelSize: Theme.smallSize
-            font.family: Theme.fontFamily
-            font.bold: true
-        }
     }
 
     Rectangle {

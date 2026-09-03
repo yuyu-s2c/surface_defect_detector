@@ -8,12 +8,12 @@
 #include <chrono>
 #include <cstdint>
 
-// 取流薄接口。本阶段 FolderSource 按 FPS 吐 test/ 图；CameraSource 空实现。
+// 取流薄接口。FolderSource 按 FPS 吐 test/ 图；CameraSource 空实现（P4 填海康）。
 // 真相机来了只换 Source，不改 InspectionSession / ViewModel。
 //
 // 队列策略（由 InspectionSession 执行，不在 Source 里）：
-//   FolderSource：队列满则阻塞取帧，保证跑完一类 test、不丢图
-//   CameraSource（P4）：队列满应丢最旧帧，保实时；本阶段 stub 不实现
+//   Block：队列满则阻塞取帧（Folder 默认，保证跑完一类 test、不丢图）
+//   DropOldest：队列满丢队头，保实时（相机；--live-smoke --overflow drop 用来测）
 
 inline qint64 steadyNowNs()
 {
@@ -21,6 +21,11 @@ inline qint64 steadyNowNs()
                std::chrono::steady_clock::now().time_since_epoch())
         .count();
 }
+
+enum class QueueOverflowPolicy {
+    Block,
+    DropOldest
+};
 
 struct CapturedFrame
 {
@@ -47,6 +52,8 @@ public:
     virtual bool isRunning() const = 0;
     // Folder 返回 playlist 长度；相机 0
     virtual int plannedCount() const { return 0; }
+    virtual QueueOverflowPolicy overflowPolicy() const { return QueueOverflowPolicy::Block; }
+    virtual int targetFps() const { return 0; }
 
 signals:
     void errorOccurred(const QString& msg);

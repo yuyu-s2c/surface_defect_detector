@@ -20,12 +20,15 @@ public:
     void setFromDataset(const DatasetManager& dataset, const QString& category);
     void setFps(int fps);
     int fps() const;
+    void setOverflowPolicy(QueueOverflowPolicy policy);
 
     bool start() override;
     void stop() override;
     bool grab(CapturedFrame& out) override;
     bool isRunning() const override;
     int plannedCount() const override;
+    QueueOverflowPolicy overflowPolicy() const override;
+    int targetFps() const override;
 
 private:
     struct Item
@@ -37,6 +40,7 @@ private:
     QVector<Item> m_items;
     QString m_category;
     int m_fps = 5;
+    QueueOverflowPolicy m_overflow = QueueOverflowPolicy::Block;
     int m_index = 0;
     qint64 m_lastGrabNs = 0;
     std::atomic<bool> m_running{false};

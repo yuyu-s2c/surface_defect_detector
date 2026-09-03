@@ -31,6 +31,21 @@ int FolderSource::fps() const
     return m_fps;
 }
 
+void FolderSource::setOverflowPolicy(QueueOverflowPolicy policy)
+{
+    m_overflow = policy;
+}
+
+QueueOverflowPolicy FolderSource::overflowPolicy() const
+{
+    return m_overflow;
+}
+
+int FolderSource::targetFps() const
+{
+    return m_fps;
+}
+
 bool FolderSource::start()
 {
     if (m_items.isEmpty())

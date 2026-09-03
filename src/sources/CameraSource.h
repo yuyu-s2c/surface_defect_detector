@@ -12,4 +12,5 @@ public:
     void stop() override;
     bool grab(CapturedFrame& out) override;
     bool isRunning() const override;
+    QueueOverflowPolicy overflowPolicy() const override;
 };

@@ -9,7 +9,8 @@
 + Phase 3.5 QML/MVVM 界面重做。
 数据集为 MVTec AD（metal_nut、screw，无监督设定：train/ 只有良品）。
 训练说明见 tools/training/TRAINING_NOTES.md。Phase 3.6（DirectML / 图像级分数过线 /
-新类别零改代码接入 / 模拟取流）已完成。Phase 4（相机/PLC）等实机，只换 `CameraSource`。
+新类别零改代码接入 / 模拟取流）与 Phase 3.7（班次落盘 / 检测·分析两态 / 丢最旧帧策略）已完成。
+Phase 4（相机/PLC）等实机，只换 `CameraSource` 并加一个 `IRejectSink`。
 
 ## 构建与运行
 
@@ -26,6 +27,7 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
 ./build/surface_defect_detector.exe --batch metal_nut           # 传统，115 张无崩溃
 ./build/surface_defect_detector.exe --batch metal_nut --engine dl  # DL，默认 DirectML
 # 取流冒烟（可选）：./build/surface_defect_detector.exe --live-smoke metal_nut --engine dl --fps 5
+# 丢最旧帧冒烟：./build/surface_defect_detector.exe --live-smoke metal_nut --engine dl --fps 15 --overflow drop
 ```
 
 ## 环境事实（已核实，勿再探测）
@@ -55,18 +57,19 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
   `leftPadding`（模板按 depth 和指示器宽度给 contentItem 让位）。
 - **分层**：QML View（qml/）只绑属性/命令；MainViewModel 是 GUI 状态层（选图、参数、
   QImage 叠加、QSettings）；DetectionController 是应用服务层（数据集 + 引擎缓存 +
-  批量编排，GUI 与 --batch 共用）。模拟取流是 `InspectionSession`（`IFrameSource` +
-  有界队列），同步 `detect()`，不走 `*Async`。不要把 Controller / cv::Mat / Session
-  暴露给 QML。GUI 耗时路径走 Controller 工作线程 + 画布蒙层/底栏进度；`--batch` 仍同步，
-  不读 QSettings。左栏数据集树用官方 `TreeViewDelegate`，点叶子节点经
-  `selectFromModelIndex` 加载。取流中不要选图 / 切引擎 / 跑批量。
+  批量编排，GUI 与 --batch 共用）。取流是 `InspectionSession`（`IFrameSource` +
+  有界队列），同步 `detect()`，不走 `*Async`。NG 走 `IRejectSink`（日志 + `_sessions/`）。
+  不要把 Controller / cv::Mat / Session 暴露给 QML。GUI 分检测/分析两态，耗时路径走
+  Controller 工作线程 + 画布蒙层/底栏进度；`--batch` 仍同步，不读 QSettings。
+  左栏数据集树用官方 `TreeViewDelegate`，点叶子节点经 `selectFromModelIndex` 加载。
+  取流中不要选图 / 切引擎 / 跑批量。
 - **不要动数据集**：metal_nut/、screw/ 只读（顶层 train/、test/、ground_truth/）。
   曾因解压套一层出现 metal_nut/metal_nut、screw/screw，已删除；若再出现则忽略。
 - **新类别**：按 MVTec 布局放入根下即可被树扫到；ONNX 放
   `models/<类>/weights/onnx/<类>.onnx`。禁止再加 `if (category == "xxx")`；
   无专表工作点走 `DLParams::defaults()`（k=3 / 面积门 1000）。训练脚本仍只认
   metal_nut / screw，本阶段不为刷表再训新类。
-- **不入库**：third_party/、build*/、models/、_onboard/（见 .gitignore）。
+- **不入库**：third_party/、build*/、models/、_onboard/、_sessions/（见 .gitignore）。
 - **不执行 git 提交/推送等变更操作**，除非用户明确要求。
 - 代码注释用中文，风格对齐现有文件（解释"为什么"，关键实测依据写入注释）。
 
@@ -75,6 +78,7 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
 - 构建零错误；改动的代码无新警告
 - 两个类别的 `--batch` 模式跑完不崩溃
 - 改取流时另跑 `--live-smoke metal_nut --engine dl --fps 5`（115 张跑完、退出 0）
+  以及改队列策略时 `--live-smoke metal_nut --engine dl --fps 15 --overflow drop`
 - 指标口径固定用 ResultEvaluator（像素级 P/R/F1/IoU + 图像级检出率）。
   图像级默认分数过线，`--batch` 另打面积门对照列。像素级与 v0.1 基线
   （DEVELOPMENT.md 第 4 节表格）同口径对比

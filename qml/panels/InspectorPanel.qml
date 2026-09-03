@@ -15,11 +15,11 @@ Rectangle {
             Layout.fillWidth: true
             height: 40
             Repeater {
-                model: ["当前", "参数", "指标", "对比"]
+                model: ["参数", "指标", "对比"]
                 delegate: Item {
                     required property string modelData
                     required property int index
-                    width: tabs.width / 4
+                    width: tabs.width / 3
                     height: 40
                     Text {
                         anchors.centerIn: parent
@@ -52,81 +52,6 @@ Rectangle {
             Layout.fillHeight: true
             currentIndex: app.inspectorTab
 
-            // 当前：判定优先，分数与框表退到后面
-            ColumnLayout {
-                anchors.margins: 0
-                Item {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 12
-                        spacing: 10
-
-                        Rectangle {
-                            visible: app.hasImage
-                            Layout.fillWidth: true
-                            implicitHeight: 80
-                            radius: Theme.radius
-                            color: app.detected ? Theme.dangerDim : Theme.accentDim
-                            border.width: 1
-                            border.color: app.detected ? Theme.danger : Theme.accent
-                            Column {
-                                anchors.centerIn: parent
-                                spacing: 2
-                                Text {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    text: app.detected ? "不合格" : "合格"
-                                    color: app.detected ? Theme.danger : Theme.accent
-                                    font.pixelSize: 28
-                                    font.bold: true
-                                    font.family: Theme.fontFamily
-                                }
-                                Text {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    text: "检出 " + app.defectCount + " 处"
-                                    color: Theme.textPrimary
-                                    font.pixelSize: Theme.bodySize
-                                    font.family: Theme.fontFamily
-                                }
-                            }
-                        }
-
-                        Text {
-                            text: app.imageInfo
-                            color: Theme.textPrimary
-                            font.pixelSize: Theme.bodySize
-                            font.family: Theme.fontFamily
-                            wrapMode: Text.WordWrap
-                            Layout.fillWidth: true
-                        }
-                        EngineStatusChip {
-                            Layout.fillWidth: true
-                            implicitHeight: 40
-                        }
-                        Text {
-                            visible: app.hasImage
-                            text: "判定依据  分 " + Number(app.imageScore).toFixed(4)
-                                  + "  /  阈 " + Number(app.imageThreshold).toFixed(4)
-                            color: Theme.textSecondary
-                            font.pixelSize: Theme.smallSize
-                            font.family: Theme.fontFamily
-                            wrapMode: Text.WordWrap
-                            Layout.fillWidth: true
-                        }
-                        BoxTable { Layout.fillWidth: true; Layout.fillHeight: true }
-                        AppButton {
-                            Layout.fillWidth: true
-                            text: "导出当前图"
-                            outlined: true
-                            enabled: app.hasImage && !app.busy && !app.liveRunning
-                            onClicked: root.exportCurrentClicked()
-                        }
-                    }
-                }
-            }
-
-            // 参数
             Item {
                 ColumnLayout {
                     anchors.fill: parent
@@ -136,7 +61,6 @@ Rectangle {
                 }
             }
 
-            // 指标
             Item {
                 ColumnLayout {
                     anchors.fill: parent
@@ -166,7 +90,6 @@ Rectangle {
                 }
             }
 
-            // 对比
             Item {
                 ColumnLayout {
                     anchors.fill: parent
@@ -195,6 +118,4 @@ Rectangle {
             }
         }
     }
-
-    signal exportCurrentClicked()
 }

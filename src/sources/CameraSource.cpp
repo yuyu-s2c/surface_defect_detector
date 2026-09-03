@@ -23,3 +23,9 @@ bool CameraSource::isRunning() const
 {
     return false;
 }
+
+QueueOverflowPolicy CameraSource::overflowPolicy() const
+{
+    // P4 填海康后 Session 按此丢最旧帧。本阶段 start() 仍失败。
+    return QueueOverflowPolicy::DropOldest;
+}

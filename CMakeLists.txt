@@ -42,10 +42,15 @@ set(PROJECT_SOURCES
     src/ResultEvaluator.cpp
     src/InspectionSession.h
     src/InspectionSession.cpp
+    src/LiveSessionTypes.h
     src/sources/IFrameSource.h
     src/sources/IRejectSink.h
     src/sources/LogRejectSink.h
     src/sources/LogRejectSink.cpp
+    src/sources/FileRejectSink.h
+    src/sources/FileRejectSink.cpp
+    src/sources/CompositeRejectSink.h
+    src/sources/CompositeRejectSink.cpp
     src/sources/FolderSource.h
     src/sources/FolderSource.cpp
     src/sources/CameraSource.h
@@ -66,7 +71,9 @@ qt_add_qml_module(surface_defect_detector
         qml/panels/DatasetPanel.qml
         qml/panels/ViewerPanel.qml
         qml/panels/InspectorPanel.qml
+        qml/panels/ResultRail.qml
         qml/components/EngineSwitch.qml
+        qml/components/ModeSwitch.qml
         qml/components/OverlayChipBar.qml
         qml/components/VerdictBadge.qml
         qml/components/StatTile.qml
@@ -96,6 +103,8 @@ qt_add_qml_module(surface_defect_detector
         src/viewmodels/MetricsListModel.cpp
         src/viewmodels/CompareListModel.h
         src/viewmodels/CompareListModel.cpp
+        src/viewmodels/NgListModel.h
+        src/viewmodels/NgListModel.cpp
         src/viewmodels/ImageConvert.h
         src/viewmodels/ImageConvert.cpp
         src/items/InspectionCanvas.h

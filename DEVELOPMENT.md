@@ -38,6 +38,7 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
 ./build/surface_defect_detector.exe --batch screw --engine dl
 ./build/surface_defect_detector.exe --batch metal_nut --engine dl --provider cpu   # 强制 CPU
 ./build/surface_defect_detector.exe --live-smoke metal_nut --engine dl --fps 5     # 取流冒烟（无窗）
+./build/surface_defect_detector.exe --live-smoke metal_nut --engine dl --fps 15 --overflow drop
 ```
 
 注意：Ninja 不在 PATH，配置时必须显式传 `CMAKE_MAKE_PROGRAM`。
@@ -51,20 +52,22 @@ Python 训练仍锁 onnxruntime==1.29.0。）
 ```
 surface_defect_detector/
 ├── CMakeLists.txt
-├── qml/                      # View：暗色质检台（顶栏 / 左树 / 中画布 / 右 Tab）
+├── qml/                      # View：检测/分析两态（顶栏 / 左树 / 中画布 / 右结果轨或分析侧栏）
 ├── src/
 │   ├── main.cpp                # 入口；--batch / --live-smoke 走 QCoreApplication，GUI 走 QGuiApplication
-│   ├── viewmodels/             # ViewModel：MainViewModel + 树/框/指标/对比模型
+│   ├── viewmodels/             # ViewModel：MainViewModel + 树/框/指标/对比/NG 列表
 │   ├── items/InspectionCanvas  # QQuickPaintedItem 看图：缩放平移，GT/检测叠加
 │   ├── DetectionController.h/.cpp # 应用服务层：数据集 + 引擎缓存 + 批量编排（GUI/CLI 共用）
-│   ├── InspectionSession.h/.cpp   # 模拟取流：有界队列 + 取流/检测双线程
-│   ├── sources/                # IFrameSource / FolderSource / CameraSource（空）/ LogRejectSink
+│   ├── InspectionSession.h/.cpp   # 取流：有界队列 + 取流/检测双线程 + 班次摘要
+│   ├── LiveSessionTypes.h         # 班次摘要 / 工件记录（session.csv）
+│   ├── sources/                # IFrameSource / FolderSource / CameraSource（空）
+│   │                           # IRejectSink / LogRejectSink / FileRejectSink / CompositeRejectSink
 │   ├── IDetectionEngine.h      # 检测引擎抽象接口 + DetectionResult 输出契约
 │   ├── DetectionEngine.h/.cpp  # 传统 CV 检测引擎（v0.1 基线，IDetectionEngine 实现）
 │   ├── DLDetectionEngine.h/.cpp # EfficientAD ONNX（P2；3.6 DirectML + 图像级分数过线）
 │   ├── EngineParams.h          # 传统/DL 可调参数；新类走 defaults()，仅 screw 保留 P2 工作点
 │   ├── OverlayColors.h         # GT 红 / 检测绿（画布与导出共用）
-│   ├── ResultExporter.h/.cpp   # 标注图 + CSV 导出（Phase 3）
+│   ├── ResultExporter.h/.cpp   # 标注图 + 批量 CSV + 班次 CSV（Phase 3 / 3.7）
 │   ├── DatasetManager.h/.cpp   # 数据集加载：类别→缺陷类型→图片，配对 GT 掩码
 │   └── ResultEvaluator.h/.cpp  # 像素级 P/R/F1/IoU + 图像级检出评估
 ├── tools/training/           # Python 训练侧（anomalib / EfficientAD）
@@ -80,7 +83,9 @@ surface_defect_detector/
 `DatasetManager` / `ResultEvaluator` 为无 UI 依赖的领域服务，由 Controller 使用。
 QML 不接触 `cv::Mat` 与引擎实例。GUI 的引擎加载 / 标定 / 单张推理 / 批量走
 DetectionController 工作线程，进度在画布蒙层与底栏；`--batch` 仍同步，口径不变。
-模拟取流走 `InspectionSession`（有界队列 + 同步 `detect()`），不走 `*Async`（忙碌会丢帧）。
+取流走 `InspectionSession`（有界队列 + 同步 `detect()`），NG 走 `IRejectSink`
+（日志 + `_sessions/` 落盘）。GUI 分检测 / 分析两态：检测态右侧是结果轨（判定 + 班次），
+分析态是参数 / 指标 / 对比。
 
 ### 关键接口契约（迭代时保持兼容）
 
@@ -355,17 +360,38 @@ NG 90 张 = 分数过线张数（88 TP + 2 good FP，与图像级 108/115 一致
 
 明确没做：Phase 4 `CameraSource` 仍是空壳；未重训 EfficientAD、未改分辨率/类别/工作点；未把工程改成 Linux 构建。
 
+### Phase 3.7 班次闭环 + 质检台布局 — ✅ 已完成
+
+P4 仍等实机。本阶段把取流从「日志计数、停了就没了」收成可回看的班次，并把 IDE 三栏改成检测/分析两态工位。不改算法、P2 工作点、`--batch` 口径。
+
+**布局：** 顶栏只留检测|分析、引擎、取流；数据集/导出/关于进「更多」。检测态右侧约 280px 结果轨（合格/不合格只出现这里 + 本班 OK/NG/丢帧/迟剔除 + NG 列表）。分析态右侧是参数 / 指标 / 对比。画布去掉判定徽章和 LiveHud，保留真值/检测开关与 NG 闪边。`TreeView` / `InspectionCanvas` 不变。
+
+**剔除落地：** `InspectionSession` 注入 `IRejectSink`。`CompositeRejectSink` = `LogRejectSink`（`[DO] REJECT`）+ `FileRejectSink`（叠图 + `rejects.csv`）。结束时写 `session.csv` / `summary.csv`。目录：数据集根 `_sessions/<时间>_<类>_<引擎>/`（gitignore）。
+
+**实时策略：** `IFrameSource::overflowPolicy()`。Folder 默认 Block（跑完一类 test）；`--overflow drop` 或未来相机关 `DropOldest`。剔除窗口 = `1000 / targetFps` ms，超时 NG 仍落盘但标迟剔除。
+
+实测（2026-09-03，metal_nut，DL DirectML，引擎已标定）：
+
+| | 墙钟 | 有效 fps | 丢帧 | 迟剔除 | 最大队列 | 最大延迟 | 跑完 |
+|---|---|---|---|---|---|---|---|
+| 5 fps · block | 24.9 s | 4.61 | 0 | 1（首帧 259 ms > 200 ms 窗） | 0 | 259 ms | **115/115** |
+| 15 fps · drop | 9.3 s | 12.32 | 0 | 5（窗 66 ms） | 2 | 250 ms | **115/115** |
+
+5 fps 检测跟得上，队列 0，NG 90 与图像级 108/115 一致（88 TP + 2 good FP）。15 fps 吞吐仍高于节拍，队列最高 2、未打满 8，故 DropOldest 未触发；迟剔除能看见。真相机跟不上时才会丢最旧帧。班次目录含 `rejects.csv`、`session.csv`、不合格叠图。退出码 0。
+
+回归未漂：`--batch metal_nut` 图像级 58/115、F1 0.2926；`--batch metal_nut --engine dl` 分数口径 108/115、F1 0.269。
+
 ### Phase 4 产线对接（远期，等实机）
 
-依赖 3.6 的 DirectML、图像级分数、`IFrameSource`。到货后再填，不在本阶段预写协议：
+依赖 3.6 的 DirectML、图像级分数、`IFrameSource`，以及 3.7 的 Sink / 丢最旧帧。到货后再填，不在本阶段预写协议：
 
-- `CameraSource`：海康 MVS / MVD 实时取流（本机已装运行时）
-- 与 PLC / 剔除机构联动（实 DO，替换 3.6 的日志输出）
+- `CameraSource`：海康 MVS / MVD 实时取流（本机已装运行时）；`overflowPolicy()` 已返回 `DropOldest`
+- 与 PLC / 剔除机构联动（再实现一个 `IRejectSink`，加进 `CompositeRejectSink`）
 
 ## 5. 工程规范
 
 - 提交规范：参考 README 参与贡献节（Feat_xxx 分支 + PR）
-- 不入库的内容：`third_party/`、`build*/`、`models/`、`_onboard/`、数据集目录不动
+- 不入库的内容：`third_party/`、`build*/`、`models/`、`_onboard/`、`_sessions/`、数据集目录不动
 - 检测引擎接口（IDetectionEngine / DetectionResult 契约）变更需同步改
   DetectionController、ResultEvaluator、main.cpp 批处理、MainViewModel 四处。
   `detected()` 为分数过线；面积门只影响掩码/框与 `--batch` 对照列

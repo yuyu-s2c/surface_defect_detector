@@ -27,6 +27,7 @@ ApplicationWindow {
         id: header
         onExportCurrentClicked: saveDialog.open()
         onExportBatchClicked: folderDialog.open()
+        onExportLiveClicked: liveFolderDialog.open()
         onDatasetClicked: datasetDialog.open()
         onAboutClicked: aboutDialog.open()
     }
@@ -37,9 +38,6 @@ ApplicationWindow {
         busy: app.busy
         current: app.progressCurrent
         total: app.progressTotal
-        liveOk: app.liveOkCount
-        liveNg: app.liveNgCount
-        liveRunning: app.liveRunning
     }
 
     SplitView {
@@ -51,9 +49,9 @@ ApplicationWindow {
         }
 
         DatasetPanel {
-            SplitView.preferredWidth: 240
-            SplitView.minimumWidth: 200
-            SplitView.maximumWidth: 360
+            SplitView.preferredWidth: 200
+            SplitView.minimumWidth: 160
+            SplitView.maximumWidth: 280
             onOpenDatasetRequested: datasetDialog.open()
         }
 
@@ -63,11 +61,22 @@ ApplicationWindow {
             SplitView.minimumWidth: 420
         }
 
-        InspectorPanel {
-            SplitView.preferredWidth: 400
-            SplitView.minimumWidth: 320
-            SplitView.maximumWidth: 520
-            onExportCurrentClicked: saveDialog.open()
+        Item {
+            SplitView.preferredWidth: app.workMode === 0 ? 280 : 320
+            SplitView.minimumWidth: app.workMode === 0 ? 240 : 280
+            SplitView.maximumWidth: app.workMode === 0 ? 360 : 480
+
+            ResultRail {
+                anchors.fill: parent
+                visible: app.workMode === 0
+                onExportCurrentClicked: saveDialog.open()
+                onExportLiveClicked: liveFolderDialog.open()
+            }
+
+            InspectorPanel {
+                anchors.fill: parent
+                visible: app.workMode === 1
+            }
         }
     }
 
@@ -92,6 +101,12 @@ ApplicationWindow {
         id: folderDialog
         currentFolder: app.suggestedExportFolderUrl()
         onAccepted: app.exportBatch(selectedFolder)
+    }
+
+    FolderDialog {
+        id: liveFolderDialog
+        currentFolder: app.suggestedLiveExportFolderUrl()
+        onAccepted: app.exportLiveSession(selectedFolder)
     }
 
     FolderDialog {
@@ -177,6 +192,8 @@ ApplicationWindow {
     Shortcut { sequence: "Esc"; onActivated: app.stopLive() }
     Shortcut { sequence: "B"; enabled: !win.isTyping(); onActivated: app.runBatch() }
     Shortcut { sequence: "Shift+C"; enabled: !win.isTyping(); onActivated: app.compareEngines() }
+    Shortcut { sequence: "I"; enabled: !win.isTyping() && !app.liveRunning && !app.busy; onActivated: app.workMode = 0 }
+    Shortcut { sequence: "A"; enabled: !win.isTyping() && !app.liveRunning && !app.busy; onActivated: app.workMode = 1 }
     Shortcut { sequence: "1"; enabled: !win.isTyping() && !app.liveRunning && !app.busy; onActivated: app.engineKind = 0 }
     Shortcut { sequence: "2"; enabled: !win.isTyping() && !app.liveRunning && !app.busy; onActivated: app.engineKind = 1 }
     Shortcut { sequence: "G"; enabled: !win.isTyping(); onActivated: app.gtOverlayVisible = !app.gtOverlayVisible }

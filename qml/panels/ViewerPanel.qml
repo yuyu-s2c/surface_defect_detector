@@ -34,28 +34,7 @@ Rectangle {
         title: app.hasDataset ? "从左侧选择一张测试图" : "先打开数据集根目录"
         subtitle: app.hasDataset
                   ? "滚轮缩放，左键拖拽平移。绿 = 检出位置。空格开始模拟取流。"
-                  : "顶栏「数据集」或 Ctrl+O。目录里放各类的 train/good 与 test/。"
-    }
-
-    Rectangle {
-        visible: app.liveRunning
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.top: parent.top
-        anchors.topMargin: 12
-        implicitWidth: liveLock.implicitWidth + 20
-        implicitHeight: 28
-        radius: 14
-        color: Theme.dangerDim
-        border.color: Theme.danger
-        Text {
-            id: liveLock
-            anchors.centerIn: parent
-            text: "取流中 · 不可选图 / 切引擎 / 批量"
-            color: Theme.danger
-            font.pixelSize: Theme.smallSize
-            font.family: Theme.fontFamily
-            font.bold: true
-        }
+                  : "顶栏「更多」或 Ctrl+O。目录里放各类的 train/good 与 test/。"
     }
 
     StationBanner {
@@ -83,34 +62,6 @@ Rectangle {
         onFitRequested: canvas.fitView()
         onGtToggled: (on) => { app.gtOverlayVisible = on }
         onDetToggled: (on) => { app.detOverlayVisible = on }
-    }
-
-    VerdictBadge {
-        visible: app.hasImage
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.margins: 12
-        hasImage: app.hasImage
-        detected: app.detected
-        verdictOk: app.verdictOk
-        liveRunning: app.liveRunning
-        gtVisible: app.gtOverlayVisible
-        imageScore: app.imageScore
-        imageThreshold: app.imageThreshold
-    }
-
-    LiveHud {
-        visible: app.liveRunning
-        anchors.left: parent.left
-        anchors.bottom: parent.bottom
-        anchors.margins: 12
-        latencyMs: app.liveLatencyMs
-        queueDepth: app.liveQueueDepth
-        queueMax: app.liveQueueMax
-        actualFps: app.liveActualFps
-        okCount: app.liveOkCount
-        ngCount: app.liveNgCount
-        lastNg: app.liveLastNg
     }
 
     Rectangle {

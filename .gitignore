@@ -12,6 +12,9 @@ screw/
 # Phase 3.6 新类接入探针（临时拷贝，不入库）
 _onboard/
 
+# Phase 3.7 取流班次落盘（NG 叠图 + CSV）
+_sessions/
+
 # Phase 2 训练侧：Python venv 与下载缓存（anomalib 预训练权重、imagenette）
 tools/training/.venv/
 tools/training/.cache/

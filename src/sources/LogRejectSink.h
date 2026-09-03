@@ -6,6 +6,5 @@
 class LogRejectSink : public IRejectSink
 {
 public:
-    void reject(const QString& category, const CapturedFrame& frame,
-                const DetectionResult& result) override;
+    void reject(const RejectContext& ctx) override;
 };

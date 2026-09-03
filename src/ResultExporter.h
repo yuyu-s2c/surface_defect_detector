@@ -1,8 +1,10 @@
 #pragma once
 
 #include "DetectionController.h"
+#include "LiveSessionTypes.h"
 
 #include <QString>
+#include <QVector>
 
 #include <opencv2/core.hpp>
 
@@ -29,4 +31,14 @@ public:
                             const QString& engineName,
                             const DatasetManager& dataset,
                             const BatchMetrics& metrics);
+
+    // 取流班次：session.csv（每张含 OK）+ summary.csv。目录不存在则创建。
+    static bool exportLiveSession(const QString& dir,
+                                  const LiveSessionSummary& summary,
+                                  const QVector<LivePieceRecord>& pieces);
+
+    static QString makeSessionDir(const QString& datasetRoot,
+                                  const QString& category,
+                                  const QString& engineName,
+                                  QString* sessionIdOut = nullptr);
 };

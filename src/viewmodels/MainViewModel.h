@@ -8,6 +8,7 @@
 #include "IDetectionEngine.h"
 #include "InspectionSession.h"
 #include "MetricsListModel.h"
+#include "NgListModel.h"
 
 #include <QImage>
 #include <QModelIndex>
@@ -79,6 +80,15 @@ class MainViewModel : public QObject
     Q_PROPERTY(QImage detOverlayImage READ detOverlayImage NOTIFY detectionChanged)
     Q_PROPERTY(QVariantList boxRects READ boxRects NOTIFY detectionChanged)
     Q_PROPERTY(int inspectorTab READ inspectorTab WRITE setInspectorTab NOTIFY inspectorTabChanged)
+    Q_PROPERTY(int workMode READ workMode WRITE setWorkMode NOTIFY workModeChanged)
+    Q_PROPERTY(bool hasLiveSession READ hasLiveSession NOTIFY liveSessionChanged)
+    Q_PROPERTY(bool canExportLive READ canExportLive NOTIFY liveSessionChanged)
+    Q_PROPERTY(int liveDroppedCount READ liveDroppedCount NOTIFY liveStatsChanged)
+    Q_PROPERTY(int liveLateCount READ liveLateCount NOTIFY liveStatsChanged)
+    Q_PROPERTY(int liveMaxQueue READ liveMaxQueue NOTIFY liveStatsChanged)
+    Q_PROPERTY(int liveMaxLatencyMs READ liveMaxLatencyMs NOTIFY liveStatsChanged)
+    Q_PROPERTY(QString liveSessionTitle READ liveSessionTitle NOTIFY liveSessionChanged)
+    Q_PROPERTY(QString liveSessionDir READ liveSessionDir NOTIFY liveSessionChanged)
     Q_PROPERTY(bool hasMetrics READ hasMetrics NOTIFY hasMetricsChanged)
     Q_PROPERTY(bool hasCompare READ hasCompare NOTIFY hasCompareChanged)
     Q_PROPERTY(QString compareCvF1 READ compareCvF1 NOTIFY hasCompareChanged)
@@ -102,6 +112,7 @@ class MainViewModel : public QObject
     Q_PROPERTY(BoxListModel* boxModel READ boxModel CONSTANT)
     Q_PROPERTY(MetricsListModel* metricsModel READ metricsModel CONSTANT)
     Q_PROPERTY(CompareListModel* compareModel READ compareModel CONSTANT)
+    Q_PROPERTY(NgListModel* ngModel READ ngModel CONSTANT)
 
 public:
     explicit MainViewModel(QObject* parent = nullptr);
@@ -165,6 +176,15 @@ public:
     QImage detOverlayImage() const { return m_detOverlayImage; }
     QVariantList boxRects() const { return m_boxRects; }
     int inspectorTab() const { return m_inspectorTab; }
+    int workMode() const { return m_workMode; }
+    bool hasLiveSession() const { return m_hasLiveSession; }
+    bool canExportLive() const;
+    int liveDroppedCount() const { return m_liveDroppedCount; }
+    int liveLateCount() const { return m_liveLateCount; }
+    int liveMaxQueue() const { return m_liveMaxQueue; }
+    int liveMaxLatencyMs() const { return m_liveMaxLatencyMs; }
+    QString liveSessionTitle() const { return m_liveSessionTitle; }
+    QString liveSessionDir() const { return m_liveSessionDir; }
     bool hasMetrics() const { return m_hasMetrics; }
     bool hasCompare() const { return m_hasCompare; }
     QString compareCvF1() const { return m_compareCvF1; }
@@ -188,6 +208,7 @@ public:
     BoxListModel* boxModel() const { return m_boxModel; }
     MetricsListModel* metricsModel() const { return m_metricsModel; }
     CompareListModel* compareModel() const { return m_compareModel; }
+    NgListModel* ngModel() const { return m_ngModel; }
 
     Q_INVOKABLE bool loadDataset(const QUrl& folder);
     bool loadDatasetPath(const QString& path);
@@ -199,6 +220,7 @@ public:
     void setGtOverlayVisible(bool visible);
     void setDetOverlayVisible(bool visible);
     void setInspectorTab(int tab);
+    void setWorkMode(int mode);
 
     void setCvZAggThreshold(double v);
     void setCvMorphCloseKernel(int v);
@@ -218,8 +240,11 @@ public:
     void setLiveTargetFps(int fps);
     Q_INVOKABLE bool exportCurrent(const QUrl& url);
     Q_INVOKABLE bool exportBatch(const QUrl& folder);
+    Q_INVOKABLE bool exportLiveSession(const QUrl& folder);
+    Q_INVOKABLE void reviewNg(int row);
     Q_INVOKABLE QUrl suggestedExportFileUrl() const;
     Q_INVOKABLE QUrl suggestedExportFolderUrl() const;
+    Q_INVOKABLE QUrl suggestedLiveExportFolderUrl() const;
     Q_INVOKABLE QUrl datasetRootUrl() const;
     Q_INVOKABLE void clearToast();
 
@@ -240,6 +265,8 @@ signals:
     void paramsDirtyChanged();
     void detectionChanged();
     void inspectorTabChanged();
+    void workModeChanged();
+    void liveSessionChanged();
     void hasMetricsChanged();
     void hasCompareChanged();
     void cvParamsChanged();
@@ -285,12 +312,16 @@ private:
     void onLiveError(const QString& msg);
     void setLiveRunning(bool running);
 
+    void applyLiveSummary(const LiveSessionSummary& s);
+    void beginLiveSession(const QString& category);
+
     DetectionController m_ctrl;
     InspectionSession m_session;
     DatasetTreeModel* m_datasetModel = nullptr;
     BoxListModel* m_boxModel = nullptr;
     MetricsListModel* m_metricsModel = nullptr;
     CompareListModel* m_compareModel = nullptr;
+    NgListModel* m_ngModel = nullptr;
 
     bool m_hasDataset = false;
     bool m_busy = false;
@@ -313,6 +344,7 @@ private:
     int m_progressCurrent = 0;
     int m_progressTotal = 0;
     int m_inspectorTab = 0;
+    int m_workMode = 0;
     int m_defectCount = 0;
     int m_minImageArea = 0;
     double m_totalArea = 0.0;
@@ -341,7 +373,14 @@ private:
     bool m_missingModelDialogShown = false;
     int m_liveOkCount = 0;
     int m_liveNgCount = 0;
+    int m_liveDroppedCount = 0;
+    int m_liveLateCount = 0;
+    int m_liveMaxQueue = 0;
+    int m_liveMaxLatencyMs = 0;
     bool m_liveLastNg = false;
+    bool m_hasLiveSession = false;
+    QString m_liveSessionTitle;
+    QString m_liveSessionDir;
     QString m_compareCvF1;
     QString m_compareDlF1;
     QString m_compareDeltaF1;

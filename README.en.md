@@ -5,8 +5,9 @@ Desktop tool for industrial surface defect detection (Qt6 Quick / QML + OpenCV +
 Status, architecture, build commands and measured metrics: [DEVELOPMENT.md](DEVELOPMENT.md).
 Agent conventions: [AGENTS.md](AGENTS.md). Training: [tools/training/TRAIN.md](tools/training/TRAIN.md).
 
-Phases 1–3.6 are done (DirectML, image-level score, zero-code new-category onboarding,
-simulated folder streaming). Phase 4 (camera/PLC) waits on hardware; swap in `CameraSource`.
+Phases 1–3.7 are done (DirectML, image-level score, zero-code new-category onboarding,
+simulated folder streaming, shift/reject archive, inspect/analyze layout).
+Phase 4 (camera/PLC) waits on hardware; swap in `CameraSource` and add an `IRejectSink`.
 
 ```bash
 ./build/surface_defect_detector.exe
@@ -14,35 +15,16 @@ simulated folder streaming). Phase 4 (camera/PLC) waits on hardware; swap in `Ca
 ./build/surface_defect_detector.exe --batch metal_nut --engine dl
 ./build/surface_defect_detector.exe --batch metal_nut --engine dl --provider cpu
 ./build/surface_defect_detector.exe --live-smoke metal_nut --engine dl --fps 5
+./build/surface_defect_detector.exe --live-smoke metal_nut --engine dl --fps 15 --overflow drop
 ```
 
-GUI overlay: red = ground-truth mask, green = detection. Header can stream `test/` at a set FPS
-(folder source); canvas shows latency / queue / OK·NG; rejects log `[DO] REJECT`.
+GUI overlay: red = ground-truth mask, green = detection. Header switches Inspect / Analyze;
+the inspect rail shows OK/NG and the shift reject list. Streaming plays `test/` at a set FPS
+(folder source); rejects log `[DO] REJECT` and write `_sessions/` (annotated PNGs + CSV).
 DL defaults to DirectML (CPU fallback).
 Switching to DL calibrates on `train/good` once per execution provider (DirectML is tens of seconds; that is not training) and writes `<model>.calib.json` (v3, keyed by EP) next to the ONNX file.
-`--batch` image-level defaults to score-over-threshold and still prints the area-gate column for comparison; it does not read GUI settings. `--provider cpu|dml|auto`.
+`--batch` image-level defaults to score-over-threshold and still prints the area-gate column for comparison; it does not read GUI settings. `--provider cpu|dml|auto`. `--overflow block|drop` only affects the live queue (Folder defaults to block so a category finishes without dropping images).
 
 New category, no code change: drop `<cat>/train/good` and `<cat>/test/...` at the dataset root;
 for DL also place `models/<cat>/weights/onnx/<cat>.onnx` (calibration needs at least 3 good images).
 Unknown categories use k=3 / area gate 1000. Details: [DEVELOPMENT.md](DEVELOPMENT.md) work item 3.
-
-1.  xxxx
-2.  xxxx
-3.  xxxx
-
-#### Contribution
-
-1.  Fork the repository
-2.  Create Feat_xxx branch
-3.  Commit your code
-4.  Create Pull Request
-
-
-#### Gitee Feature
-
-1.  You can use Readme\_XXX.md to support different languages, such as Readme\_en.md, Readme\_zh.md
-2.  Gitee blog [blog.gitee.com](https://blog.gitee.com)
-3.  Explore open source project [https://gitee.com/explore](https://gitee.com/explore)
-4.  The most valuable open source project [GVP](https://gitee.com/gvp)
-5.  The manual of Gitee [https://gitee.com/help](https://gitee.com/help)
-6.  The most popular members  [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)

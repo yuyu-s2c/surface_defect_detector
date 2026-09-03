@@ -6,6 +6,7 @@ Button {
     property bool primary: false
     property bool outlined: false
     property bool highlight: false
+    property bool active: false
     hoverEnabled: true
     leftPadding: 14
     rightPadding: 14
@@ -29,7 +30,13 @@ Button {
             return root.outlined ? "transparent" : Theme.bgElevated
         }
         border.width: (root.primary && root.enabled) ? 0 : 1
-        border.color: root.highlight ? Theme.warn : Theme.border
+        border.color: {
+            if (root.highlight)
+                return Theme.warn
+            if (root.active)
+                return Theme.accent
+            return Theme.border
+        }
     }
 
     contentItem: Text {

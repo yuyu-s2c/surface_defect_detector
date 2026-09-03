@@ -4,6 +4,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -168,6 +169,74 @@ bool ResultExporter::exportBatch(const QString& dir,
             << goodIm.total << ','
             << csvNum(1.0 - goodArea.accuracy()) << ','
             << (goodArea.total - goodArea.correct) << '\n';
+    }
+    return true;
+}
+
+QString ResultExporter::makeSessionDir(const QString& datasetRoot,
+                                       const QString& category,
+                                       const QString& engineName,
+                                       QString* sessionIdOut)
+{
+    const QString id = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss"))
+        + QLatin1Char('_') + category + QLatin1Char('_') + engineName;
+    if (sessionIdOut)
+        *sessionIdOut = id;
+    const QString dir = QDir(datasetRoot).filePath(QStringLiteral("_sessions/") + id);
+    QDir().mkpath(dir);
+    return dir;
+}
+
+bool ResultExporter::exportLiveSession(const QString& dir,
+                                       const LiveSessionSummary& summary,
+                                       const QVector<LivePieceRecord>& pieces)
+{
+    if (dir.isEmpty())
+        return false;
+    if (!QDir().mkpath(dir))
+        return false;
+    QDir outDir(dir);
+
+    QFile sumFile(outDir.filePath(QStringLiteral("summary.csv")));
+    if (!sumFile.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+    QTextStream sum(&sumFile);
+    sum.setEncoding(QStringConverter::Utf8);
+    sum << QStringLiteral("session_id,category,engine,provider,target_fps,effective_fps,"
+                          "elapsed_s,ok,ng,dropped,late_eject,max_queue,max_latency_ms,planned,done\n");
+    sum << summary.sessionId << ','
+        << summary.category << ','
+        << summary.engineName << ','
+        << summary.provider << ','
+        << summary.targetFps << ','
+        << QString::number(summary.effectiveFps, 'f', 2) << ','
+        << QString::number(summary.elapsedSec, 'f', 2) << ','
+        << summary.ok << ','
+        << summary.ng << ','
+        << summary.dropped << ','
+        << summary.lateEject << ','
+        << summary.maxQueue << ','
+        << summary.maxLatencyMs << ','
+        << summary.planned << ','
+        << summary.done << '\n';
+    sumFile.close();
+
+    QFile perFile(outDir.filePath(QStringLiteral("session.csv")));
+    if (!perFile.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+    QTextStream per(&perFile);
+    per.setEncoding(QStringConverter::Utf8);
+    per << QStringLiteral("category,defect,file,detected,score,threshold,latency_ms,late_eject,queue_depth\n");
+    for (const LivePieceRecord& rec : pieces) {
+        per << rec.category << ','
+            << rec.defectType << ','
+            << QFileInfo(rec.path).fileName() << ','
+            << (rec.detected ? 1 : 0) << ','
+            << QString::number(rec.imageScore, 'f', 4) << ','
+            << QString::number(rec.imageThreshold, 'f', 4) << ','
+            << rec.latencyMs << ','
+            << (rec.lateEject ? 1 : 0) << ','
+            << rec.queueDepth << '\n';
     }
     return true;
 }

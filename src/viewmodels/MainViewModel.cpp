@@ -5,9 +5,13 @@
 #include "ImageConvert.h"
 #include "OverlayColors.h"
 #include "ResultExporter.h"
+#include "sources/CompositeRejectSink.h"
+#include "sources/FileRejectSink.h"
 #include "sources/FolderSource.h"
+#include "sources/LogRejectSink.h"
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QSettings>
 #include <QVariantMap>
@@ -25,6 +29,7 @@ MainViewModel::MainViewModel(QObject* parent)
     , m_boxModel(new BoxListModel(this))
     , m_metricsModel(new MetricsListModel(this))
     , m_compareModel(new CompareListModel(this))
+    , m_ngModel(new NgListModel(this))
 {
     m_appliedCv = m_cv;
     m_appliedDl = m_dl;
@@ -78,12 +83,13 @@ QString MainViewModel::scoreRuleText() const
 QString MainViewModel::aboutBody() const
 {
     return QStringLiteral(
-        "离线质检工作站：文件夹图源、模拟取流、批量评估、PNG/CSV 导出、传统 CV 与 EfficientAD 双引擎。\n\n"
+        "离线质检工作站：文件夹图源、模拟取流、班次剔除落盘、批量评估、PNG/CSV 导出、传统 CV 与 EfficientAD 双引擎。\n\n"
         "深度学习用本地 ONNX（默认 DirectML，失败回 CPU），不会联网、不会训练。"
         "权重约定：models/<类别>/weights/onnx/<类别>.onnx。"
         "首次对该执行器标定会扫描 train/good 并写入同目录 .calib.json（v3，按 EP 分键），之后复用缓存。\n\n"
         "图像级判定是分数过线，不是掩码面积。面积门只影响绿叠加和 --batch 对照列。\n\n"
-        "本机未接相机 / PLC（Phase 4）。取流是 FolderSource 按设定帧率吐当前类 test/。");
+        "本机未接相机 / PLC（Phase 4）。取流是 FolderSource 按设定帧率吐当前类 test/。"
+        "不合格会写入数据集根 _sessions/（叠图 + CSV），停流后可在右侧结果轨回看。");
 }
 
 QString MainViewModel::shortcutsHelp() const
@@ -91,7 +97,8 @@ QString MainViewModel::shortcutsHelp() const
     return QStringLiteral(
         "空格 开始/停止取流    Esc 停止取流    B 批量    Shift+C 对比引擎\n"
         "1 传统 CV    2 EfficientAD    G 真值叠加    D 检测叠加    F 适应画面\n"
-        "Ctrl+O 打开数据集    Ctrl+E 导出当前图    Ctrl+Shift+E 导出批量    F1 关于");
+        "I 检测台    A 分析台    Ctrl+O 打开数据集    Ctrl+E 导出当前图\n"
+        "Ctrl+Shift+E 导出批量    F1 关于");
 }
 
 TraditionalParams MainViewModel::clampCv(const TraditionalParams& p)
@@ -261,6 +268,11 @@ bool MainViewModel::canStartLive() const
 bool MainViewModel::canExportBatch() const
 {
     return m_ctrl.lastBatch(currentKind(), m_currentCategory) != nullptr;
+}
+
+bool MainViewModel::canExportLive() const
+{
+    return !m_liveRunning && !m_liveStarting && !m_liveSessionDir.isEmpty();
 }
 
 EngineKind MainViewModel::currentKind() const
@@ -505,11 +517,22 @@ void MainViewModel::setDetOverlayVisible(bool visible)
 
 void MainViewModel::setInspectorTab(int tab)
 {
-    tab = qBound(0, tab, 3);
+    tab = qBound(0, tab, 2);
     if (m_inspectorTab == tab)
         return;
     m_inspectorTab = tab;
     emit inspectorTabChanged();
+}
+
+void MainViewModel::setWorkMode(int mode)
+{
+    if (m_liveRunning || m_liveStarting)
+        mode = 0;
+    mode = (mode == 1) ? 1 : 0;
+    if (m_workMode == mode)
+        return;
+    m_workMode = mode;
+    emit workModeChanged();
 }
 
 void MainViewModel::setCvZAggThreshold(double v)
@@ -752,6 +775,8 @@ void MainViewModel::runBatch()
 {
     if (m_currentCategory.isEmpty() || m_ctrl.isBusy() || m_liveRunning || m_liveStarting)
         return;
+    setWorkMode(1);
+    setInspectorTab(1);
     m_ctrl.runBatchAsync(m_currentCategory);
 }
 
@@ -759,6 +784,8 @@ void MainViewModel::compareEngines()
 {
     if (m_currentCategory.isEmpty() || m_ctrl.isBusy() || m_liveRunning || m_liveStarting)
         return;
+    setWorkMode(1);
+    setInspectorTab(2);
     m_ctrl.compareAsync(m_currentCategory);
 }
 
@@ -788,6 +815,7 @@ void MainViewModel::setLiveRunning(bool running)
     m_liveRunning = running;
     emit liveRunningChanged();
     emit workEnabledChanged();
+    emit liveSessionChanged();
 }
 
 void MainViewModel::startLive()
@@ -801,13 +829,29 @@ void MainViewModel::startLive()
         raiseError(missingDlReason(m_currentCategory));
         return;
     }
-    m_liveOkCount = 0;
-    m_liveNgCount = 0;
-    m_liveLastNg = false;
-    emit liveStatsChanged();
+    setWorkMode(0);
+    beginLiveSession(m_currentCategory);
     m_liveStarting = true;
     emit workEnabledChanged();
     m_ctrl.prepareEngineAsync(m_currentCategory);
+}
+
+void MainViewModel::beginLiveSession(const QString& category)
+{
+    m_liveOkCount = 0;
+    m_liveNgCount = 0;
+    m_liveDroppedCount = 0;
+    m_liveLateCount = 0;
+    m_liveMaxQueue = 0;
+    m_liveMaxLatencyMs = 0;
+    m_liveLastNg = false;
+    m_hasLiveSession = false;
+    m_liveSessionTitle.clear();
+    m_liveSessionDir.clear();
+    m_ngModel->clear();
+    emit liveStatsChanged();
+    emit liveSessionChanged();
+    Q_UNUSED(category);
 }
 
 void MainViewModel::stopLive()
@@ -815,6 +859,7 @@ void MainViewModel::stopLive()
     const bool was = m_liveRunning || m_liveStarting || m_session.isRunning();
     m_liveStarting = false;
     m_session.stop();
+    applyLiveSummary(m_session.lastSummary());
     setLiveRunning(false);
     emit workEnabledChanged();
     if (was) {
@@ -843,6 +888,24 @@ void MainViewModel::onEnginePrepared(bool ok, const QString& category)
     auto src = std::make_unique<FolderSource>();
     src->setFromDataset(m_ctrl.dataset(), category);
     src->setFps(m_liveTargetFps);
+
+    QString sessionId;
+    const QString dir = ResultExporter::makeSessionDir(
+        m_datasetRoot, category, currentEngineName(), &sessionId);
+    auto composite = std::make_unique<CompositeRejectSink>();
+    composite->add(std::make_unique<LogRejectSink>());
+    composite->add(std::make_unique<FileRejectSink>(dir));
+    m_session.setRejectSink(std::move(composite));
+    m_session.setSessionMeta(sessionId, dir, currentEngineName(), m_providerText);
+    m_liveSessionDir = dir;
+    m_liveSessionTitle = QStringLiteral("%1 · %2")
+                             .arg(folderDisplayName(category),
+                                  currentKind() == EngineKind::DL
+                                      ? QStringLiteral("EfficientAD")
+                                      : QStringLiteral("传统 CV"));
+    m_hasLiveSession = true;
+    emit liveSessionChanged();
+
     if (!m_session.start(std::move(src), category)) {
         emit workEnabledChanged();
         raiseError(QStringLiteral("无法开始取流（该类别没有测试图）"));
@@ -886,22 +949,37 @@ void MainViewModel::onLiveFrame(const LiveInspectedFrame& frame)
     m_liveLatencyMs = int(frame.latencyMs);
     m_liveQueueDepth = frame.queueDepth;
     m_liveActualFps = frame.actualFps;
+    m_liveDroppedCount = frame.dropped;
+    m_liveLateCount = frame.lateCount;
+    m_liveMaxQueue = qMax(m_liveMaxQueue, frame.queueDepth);
+    m_liveMaxLatencyMs = qMax(m_liveMaxLatencyMs, int(frame.latencyMs));
     emit liveStatsChanged();
 
     const QString verdict = frame.result.detected() ? QStringLiteral("不合格") : QStringLiteral("合格");
-    if (frame.result.detected())
+    if (frame.result.detected()) {
         ++m_liveNgCount;
-    else
+        NgListModel::Record rec;
+        rec.category = frame.category;
+        rec.defectType = frame.defectType;
+        rec.path = frame.path;
+        rec.fileName = QFileInfo(frame.path).fileName();
+        rec.defectLabel = folderDisplayName(frame.defectType);
+        rec.imageScore = frame.result.imageScore;
+        rec.imageThreshold = frame.result.imageThreshold;
+        rec.latencyMs = frame.latencyMs;
+        rec.lateEject = frame.lateEject;
+        rec.result = frame.result;
+        m_ngModel->append(rec);
+    } else {
         ++m_liveOkCount;
+    }
     m_liveLastNg = frame.result.detected();
     setStatusTone(m_liveLastNg ? QStringLiteral("ng") : QStringLiteral("ok"));
-    setStatusText(QStringLiteral("合格 %1 · 不合格 %2  |  %3  |  %4/%5/%6（%7/%8）  |  %9 帧/秒  延迟 %10 ms")
-                      .arg(m_liveOkCount)
-                      .arg(m_liveNgCount)
+    setStatusText(QStringLiteral("%1  |  %2/%3/%4（%5/%6）  |  %7 帧/秒  延迟 %8 ms")
                       .arg(verdict)
-                      .arg(folderDisplayName(frame.category),
-                           folderDisplayName(frame.defectType),
-                           QFileInfo(frame.path).fileName())
+                      .arg(folderDisplayName(frame.category))
+                      .arg(folderDisplayName(frame.defectType))
+                      .arg(QFileInfo(frame.path).fileName())
                       .arg(frame.done)
                       .arg(frame.total)
                       .arg(frame.actualFps, 0, 'f', 1)
@@ -911,6 +989,7 @@ void MainViewModel::onLiveFrame(const LiveInspectedFrame& frame)
 void MainViewModel::onLiveFinished(int total, int ngCount)
 {
     m_liveStarting = false;
+    applyLiveSummary(m_session.lastSummary());
     setLiveRunning(false);
     setStatusTone(ngCount > 0 ? QStringLiteral("ng") : QStringLiteral("ok"));
     setStatusText(QStringLiteral("取流结束：%1 张，合格 %2，不合格 %3")
@@ -919,6 +998,30 @@ void MainViewModel::onLiveFinished(int total, int ngCount)
                       .arg(ngCount));
     showToast(QStringLiteral("取流结束：不合格 %1 / %2").arg(ngCount).arg(total));
     refreshStationStatus();
+}
+
+void MainViewModel::applyLiveSummary(const LiveSessionSummary& s)
+{
+    if (s.done <= 0 && s.sessionDir.isEmpty())
+        return;
+    m_liveOkCount = s.ok;
+    m_liveNgCount = s.ng;
+    m_liveDroppedCount = s.dropped;
+    m_liveLateCount = s.lateEject;
+    m_liveMaxQueue = s.maxQueue;
+    m_liveMaxLatencyMs = int(s.maxLatencyMs);
+    if (!s.sessionDir.isEmpty())
+        m_liveSessionDir = s.sessionDir;
+    if (!s.category.isEmpty()) {
+        m_liveSessionTitle = QStringLiteral("%1 · %2")
+                                 .arg(folderDisplayName(s.category),
+                                      s.engineName == QStringLiteral("dl")
+                                          ? QStringLiteral("EfficientAD")
+                                          : QStringLiteral("传统 CV"));
+    }
+    m_hasLiveSession = true;
+    emit liveStatsChanged();
+    emit liveSessionChanged();
 }
 
 void MainViewModel::onLiveError(const QString& msg)
@@ -944,6 +1047,80 @@ QUrl MainViewModel::suggestedExportFolderUrl() const
         QStringLiteral("export_%1_%2").arg(m_currentCategory, currentEngineName()));
     QDir().mkpath(dir);
     return QUrl::fromLocalFile(dir);
+}
+
+QUrl MainViewModel::suggestedLiveExportFolderUrl() const
+{
+    if (!m_liveSessionDir.isEmpty())
+        return QUrl::fromLocalFile(m_liveSessionDir);
+    return QUrl::fromLocalFile(QDir::current().filePath(QStringLiteral("export_live")));
+}
+
+void MainViewModel::reviewNg(int row)
+{
+    if (m_liveRunning || m_liveStarting)
+        return;
+    const NgListModel::Record* rec = m_ngModel->recordAt(row);
+    if (!rec)
+        return;
+    m_ngModel->setSelectedRow(row);
+    m_currentCategory = rec->category;
+    m_currentDefectType = rec->defectType;
+    m_currentImagePath = rec->path;
+    m_currentBgr = cv::imread(rec->path.toLocal8Bit().constData(), cv::IMREAD_COLOR);
+    m_sourceImage = bgrToQImage(m_currentBgr);
+    m_currentGt.release();
+    m_gtOverlayImage = {};
+    const QString gtPath = m_ctrl.dataset().groundTruthMask(
+        m_currentCategory, m_currentDefectType, m_currentImagePath);
+    if (!gtPath.isEmpty()) {
+        cv::Mat gt = cv::imread(gtPath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
+        if (!gt.empty() && !m_currentBgr.empty() && gt.size() != m_currentBgr.size())
+            cv::resize(gt, gt, m_currentBgr.size(), 0, 0, cv::INTER_NEAREST);
+        m_currentGt = gt;
+        m_gtOverlayImage = maskToOverlayImage(gt, OverlayColors::gtRed, OverlayColors::gtAlpha);
+    }
+    applyDetectionResult(rec->result);
+    emit imageChanged();
+    emit selectionChanged();
+    setStatusTone(QStringLiteral("ng"));
+    setStatusText(QStringLiteral("回看不合格 %1 / %2")
+                      .arg(folderDisplayName(rec->defectType), rec->fileName));
+}
+
+bool MainViewModel::exportLiveSession(const QUrl& folder)
+{
+    if (m_liveSessionDir.isEmpty()) {
+        raiseError(QStringLiteral("还没有班次记录。先跑一次取流。"));
+        return false;
+    }
+    const QString dest = folder.toLocalFile();
+    if (dest.isEmpty())
+        return false;
+    if (!QDir().mkpath(dest)) {
+        raiseError(QStringLiteral("无法创建目录：%1").arg(dest));
+        return false;
+    }
+    const QDir src(m_liveSessionDir);
+    const QFileInfoList files = src.entryInfoList(QDir::Files);
+    if (files.isEmpty()) {
+        raiseError(QStringLiteral("班次目录是空的：%1").arg(m_liveSessionDir));
+        return false;
+    }
+    int copied = 0;
+    for (const QFileInfo& fi : files) {
+        const QString to = QDir(dest).filePath(fi.fileName());
+        QFile::remove(to);
+        if (QFile::copy(fi.absoluteFilePath(), to))
+            ++copied;
+    }
+    if (copied <= 0) {
+        raiseError(QStringLiteral("复制班次文件失败：%1").arg(dest));
+        return false;
+    }
+    setStatusText(QStringLiteral("已导出班次到 %1").arg(dest));
+    showToast(QStringLiteral("已导出班次 CSV 与不合格叠图"));
+    return true;
 }
 
 bool MainViewModel::exportCurrent(const QUrl& url)
