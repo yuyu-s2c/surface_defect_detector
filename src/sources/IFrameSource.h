@@ -8,12 +8,12 @@
 #include <chrono>
 #include <cstdint>
 
-// 取流薄接口。FolderSource 按 FPS 吐 test/ 图；CameraSource 空实现（P4 填海康）。
-// 真相机来了只换 Source，不改 InspectionSession / ViewModel。
+// 取流薄接口。FolderSource 按 FPS 吐 test/ 图；WebcamSource 本机摄像头（P4.0）；
+// CameraSource 空实现（完整 P4 填海康）。真工业相机来了只换 CameraSource。
 //
 // 队列策略（由 InspectionSession 执行，不在 Source 里）：
 //   Block：队列满则阻塞取帧（Folder 默认，保证跑完一类 test、不丢图）
-//   DropOldest：队列满丢队头，保实时（相机；--live-smoke --overflow drop 用来测）
+//   DropOldest：队列满丢队头，保实时（Webcam / 海康；--live-smoke --overflow drop 用来测）
 
 inline qint64 steadyNowNs()
 {
@@ -30,8 +30,8 @@ enum class QueueOverflowPolicy {
 struct CapturedFrame
 {
     cv::Mat bgr;
-    QString path;       // Folder 填文件路径；相机空
-    QString defectType; // Folder 从 test/<缺陷>/ 来；相机空
+    QString path;       // Folder 填文件路径；Webcam 填 cam_000123；海康空
+    QString defectType; // Folder 从 test/<缺陷>/ 来；Webcam / 海康空
     qint64 grabbedNs = 0;
 };
 

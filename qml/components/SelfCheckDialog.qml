@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// 开线前自检。相机保持离线；通过后才 confirmStartLive → FolderSource。
+// 开线前自检。通过后才 confirmStartLive；图源由顶栏 liveSourceKind 决定。
 
 Dialog {
     id: root
@@ -20,7 +20,7 @@ Dialog {
 
         Text {
             Layout.fillWidth: true
-            text: "相机保持离线。确认后用 FolderSource 模拟产线，不合格打模拟 DO0.0。"
+            text: app.selfCheckIntroText
             color: Theme.textSecondary
             font.pixelSize: Theme.smallSize
             font.family: Theme.fontFamily

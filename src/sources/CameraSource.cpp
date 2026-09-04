@@ -7,7 +7,8 @@ CameraSource::CameraSource(QObject* parent)
 
 bool CameraSource::start()
 {
-    emit errorOccurred(QStringLiteral("相机离线（Phase 4）。本工位不发假直播，模拟取流请用 FolderSource。"));
+    emit errorOccurred(QStringLiteral(
+        "海康离线（P4 实机）。本机摄像头走 WebcamSource，模拟取流走 FolderSource。"));
     return false;
 }
 
@@ -26,6 +27,6 @@ bool CameraSource::isRunning() const
 
 QueueOverflowPolicy CameraSource::overflowPolicy() const
 {
-    // P4 填海康后 Session 按此丢最旧帧。本阶段 start() 仍失败。
+    // 完整 P4 填海康后 Session 按此丢最旧帧。本阶段 start() 仍失败。
     return QueueOverflowPolicy::DropOldest;
 }

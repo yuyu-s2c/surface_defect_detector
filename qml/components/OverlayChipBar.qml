@@ -6,6 +6,7 @@ Row {
     property bool gtVisible: true
     property bool detVisible: true
     property bool liveRunning: false
+    property bool previewRunning: false
     property real zoom: 1
     signal fitRequested()
     signal gtToggled(bool on)
@@ -50,7 +51,7 @@ Row {
     }
 
     Rectangle {
-        visible: !root.liveRunning
+        visible: !root.liveRunning && !root.previewRunning
         height: 28
         width: gtText.width + 20
         radius: 14
@@ -74,6 +75,7 @@ Row {
     }
 
     Rectangle {
+        visible: !root.previewRunning
         height: 28
         width: detText.width + 20
         radius: 14

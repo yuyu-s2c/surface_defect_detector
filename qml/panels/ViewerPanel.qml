@@ -30,10 +30,10 @@ Rectangle {
 
     EmptyState {
         anchors.fill: parent
-        visible: !app.hasImage && !app.busy && !app.liveRunning && app.stationAlert.length === 0
+        visible: !app.hasImage && !app.busy && !app.liveRunning && !app.previewRunning && app.stationAlert.length === 0
         title: app.hasDataset ? "从左侧选择一张测试图" : "先打开数据集根目录"
         subtitle: app.hasDataset
-                  ? "滚轮缩放，左键拖拽平移。绿 = 检出位置。空格开线自检（模拟取流，相机离线）。"
+                  ? "滚轮缩放，左键拖拽平移。绿 = 检出位置。空格开线自检（顶栏可切文件夹 / 本机摄像头）。"
                   : "顶栏「更多」或 Ctrl+O。目录里放各类的 train/good 与 test/。"
     }
 
@@ -58,6 +58,7 @@ Rectangle {
         gtVisible: app.gtOverlayVisible
         detVisible: app.detOverlayVisible
         liveRunning: app.liveRunning
+        previewRunning: app.previewRunning
         zoom: canvas.zoom
         onFitRequested: canvas.fitView()
         onGtToggled: (on) => { app.gtOverlayVisible = on }

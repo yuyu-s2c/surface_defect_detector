@@ -11,7 +11,7 @@
 #include <atomic>
 
 // 按设定 FPS 依次吐出某类别 test/ 全部图（含 good），顺序与 runBatch 一致。
-// 这是本工位唯一直播路径（相机离线）。不循环；grab() 在 EOF 返回 false。
+// 默认可复现直播路径（--live-smoke / 顶栏「文件夹」）。不循环；grab() 在 EOF 返回 false。
 class FolderSource : public IFrameSource
 {
 public:

@@ -8,14 +8,17 @@
 #include "sources/CompositeRejectSink.h"
 #include "sources/FileRejectSink.h"
 #include "sources/FolderSource.h"
+#include "sources/IFrameSource.h"
 #include "sources/LogRejectSink.h"
 #include "sources/SimulatedDoSink.h"
+#include "sources/WebcamSource.h"
 
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QSettings>
+#include <QTimer>
 #include <QVariantMap>
 #include <QtMath>
 
@@ -56,11 +59,24 @@ MainViewModel::MainViewModel(QObject* parent)
             this, &MainViewModel::onLiveFinished);
     connect(&m_session, &InspectionSession::errorOccurred,
             this, &MainViewModel::onLiveError);
+    connect(&m_preview, &WebcamPreview::frameReady,
+            this, &MainViewModel::onPreviewFrame, Qt::QueuedConnection);
+    connect(&m_preview, &WebcamPreview::errorOccurred,
+            this, &MainViewModel::onPreviewError, Qt::QueuedConnection);
+
+    // 等事件循环起来再开预览，避免构造阶段堵住窗口。
+    if (usingWebcam()) {
+        QTimer::singleShot(0, this, [this]() {
+            if (usingWebcam() && !m_liveRunning && !m_liveStarting)
+                startPreview();
+        });
+    }
 }
 
 MainViewModel::~MainViewModel()
 {
     m_liveStarting = false;
+    stopPreview();
     m_session.stop();
 }
 
@@ -71,6 +87,8 @@ QString MainViewModel::currentCategoryLabel() const
 
 QString MainViewModel::imageInfo() const
 {
+    if (m_previewRunning)
+        return QStringLiteral("本机摄像头预览");
     if (m_currentImagePath.isEmpty())
         return QStringLiteral("未选择图片");
     return QStringLiteral("%1 / %2 / %3")
@@ -92,7 +110,8 @@ QString MainViewModel::aboutBody() const
         "权重约定：models/<类别>/weights/onnx/<类别>.onnx。"
         "首次对该执行器标定会扫描 train/good 并写入同目录 .calib.json（v3，按 EP 分键），之后复用缓存。\n\n"
         "图像级判定是分数过线，不是掩码面积。面积门只影响绿叠加和 --batch 对照列。\n\n"
-        "本机相机离线 / 未接 PLC（Phase 4）。取流只走 FolderSource 按设定帧率吐当前类 test/，不会启动 CameraSource、不发假直播。"
+        "海康相机离线 / 未接 PLC（完整 Phase 4 等实机）。顶栏可切 FolderSource（按帧率吐当前类 test/）或本机 USB 摄像头（WebcamSource）。"
+        "不会把 CameraSource 当假直播。Webcam 帧相对 metal_nut/screw 是分布外，整班 NG 是预期；指标仍以 --batch / --live-smoke 为准。\n\n"
         "不合格走 CompositeRejectSink：日志 + _sessions/ 叠图 CSV + 模拟 DO0.0 脉冲（do_map.csv / do_pulses.csv）。"
         "连续不合格可联锁停线。实机到货只换 CameraSource 并再加一个真实 DO 的 IRejectSink。");
 }
@@ -269,9 +288,25 @@ bool MainViewModel::canStartLive() const
         return false;
     if (currentKind() == EngineKind::Traditional && m_ctrl.trainGoodCount(m_currentCategory) <= 0)
         return false;
-    if (testImageCount(m_currentCategory) <= 0)
+    if (!usingWebcam() && testImageCount(m_currentCategory) <= 0)
         return false;
     return true;
+}
+
+QString MainViewModel::liveStartButtonText() const
+{
+    return usingWebcam() ? QStringLiteral("开线") : QStringLiteral("模拟开线");
+}
+
+QString MainViewModel::selfCheckIntroText() const
+{
+    if (usingWebcam()) {
+        return QStringLiteral(
+            "确认后用本机摄像头（WebcamSource）开线，不合格打模拟 DO0.0。"
+            "海康 CameraSource 仍离线。检出相对当前类别是分布外，整班 NG 是预期。");
+    }
+    return QStringLiteral(
+        "海康保持离线。确认后用 FolderSource 模拟产线，不合格打模拟 DO0.0。");
 }
 
 bool MainViewModel::canExportBatch() const
@@ -286,11 +321,20 @@ bool MainViewModel::canExportLive() const
 
 QString MainViewModel::cameraStatusText() const
 {
+    if (usingWebcam())
+        return QStringLiteral("本机摄像头 · OpenCV");
     return QStringLiteral("相机离线");
 }
 
 QString MainViewModel::sourceStatusText() const
 {
+    if (usingWebcam()) {
+        if (m_liveRunning)
+            return QStringLiteral("取流中 · WebcamSource");
+        if (m_previewRunning)
+            return QStringLiteral("预览中 · WebcamSource");
+        return QStringLiteral("本机摄像头 · WebcamSource");
+    }
     if (m_liveRunning)
         return QStringLiteral("模拟取流中 · FolderSource");
     return QStringLiteral("模拟取流 · FolderSource");
@@ -328,6 +372,8 @@ void MainViewModel::loadStationSettings()
     m_operatorName = s.value(QStringLiteral("operatorName")).toString();
     const int limit = s.value(QStringLiteral("consecutiveNgLimit"), 8).toInt();
     m_consecutiveNgLimit = qBound(0, limit, 200);
+    const int src = s.value(QStringLiteral("liveSourceKind"), 0).toInt();
+    m_liveSourceKind = (src == 1) ? 1 : 0;
     if (m_workOrder.isEmpty())
         m_workOrder = QStringLiteral("WO-%1").arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd")));
 }
@@ -339,6 +385,7 @@ void MainViewModel::saveStationSettings()
     s.setValue(QStringLiteral("workOrder"), m_workOrder);
     s.setValue(QStringLiteral("operatorName"), m_operatorName);
     s.setValue(QStringLiteral("consecutiveNgLimit"), m_consecutiveNgLimit);
+    s.setValue(QStringLiteral("liveSourceKind"), m_liveSourceKind);
 }
 
 void MainViewModel::setWorkOrder(const QString& v)
@@ -371,6 +418,32 @@ void MainViewModel::setConsecutiveNgLimit(int n)
     emit recipeChanged();
 }
 
+void MainViewModel::setLiveSourceKind(int kind)
+{
+    const int k = (kind == 1) ? 1 : 0;
+    if (m_liveSourceKind == k)
+        return;
+    if (m_liveRunning || m_liveStarting)
+        return;
+    m_liveSourceKind = k;
+    saveStationSettings();
+    emit liveSourceKindChanged();
+    emit workEnabledChanged();
+    emit stationStatusChanged();
+    if (k == 1) {
+        startPreview();
+    } else {
+        stopPreview();
+        if (!m_currentImagePath.isEmpty())
+            loadCurrentImage();
+        else {
+            m_currentBgr.release();
+            m_sourceImage = {};
+            emit imageChanged();
+        }
+    }
+}
+
 void MainViewModel::rebuildSelfCheck()
 {
     m_selfCheckItems.clear();
@@ -386,25 +459,66 @@ void MainViewModel::rebuildSelfCheck()
     };
 
     add(QStringLiteral("相机"),
-        QStringLiteral("离线。本工位不启动 CameraSource，不发假直播。Phase 4 只换该类。"),
+        usingWebcam()
+            ? QStringLiteral("海康离线。本班走 WebcamSource，不启动 CameraSource。")
+            : QStringLiteral("离线。本工位不启动 CameraSource，不发假直播。完整 P4 只换该类。"),
         true);
 
-    const int planned = testImageCount(m_currentCategory);
-    if (m_currentCategory.isEmpty()) {
-        add(QStringLiteral("图源"),
-            QStringLiteral("未选类别，无法用 FolderSource 模拟取流。"),
-            false);
-    } else if (planned <= 0) {
-        add(QStringLiteral("图源"),
-            QStringLiteral("%1 的 test/ 为空。").arg(folderDisplayName(m_currentCategory)),
-            false);
+    if (usingWebcam()) {
+        if (m_currentCategory.isEmpty()) {
+            add(QStringLiteral("图源"),
+                QStringLiteral("未选类别，无法标定引擎（Webcam 仍要当前类的 train/good）。"),
+                false);
+        } else {
+            // 预览已占设备：再 probe() 会抢不到相机。出过帧就当探活通过。
+            if (m_preview.hasFrame()) {
+                add(QStringLiteral("图源"),
+                    QStringLiteral("本机摄像头 · OpenCV · 设备 %1 · %2×%3 · %4 帧/秒 · 类别 %5 · 预览中")
+                        .arg(m_preview.deviceIndex())
+                        .arg(m_preview.lastWidth())
+                        .arg(m_preview.lastHeight())
+                        .arg(m_liveTargetFps)
+                        .arg(folderDisplayName(m_currentCategory)),
+                    true);
+            } else if (m_preview.isRunning()) {
+                add(QStringLiteral("图源"),
+                    QStringLiteral("本机摄像头预览启动中 · %1 帧/秒 · 类别 %2")
+                        .arg(m_liveTargetFps)
+                        .arg(folderDisplayName(m_currentCategory)),
+                    true);
+            } else if (!m_preview.lastError().isEmpty()) {
+                add(QStringLiteral("图源"), m_preview.lastError(), false);
+            } else {
+                QString detail;
+                const bool camOk = WebcamSource::probe(0, &detail);
+                add(QStringLiteral("图源"),
+                    camOk
+                        ? QStringLiteral("%1 · %2 帧/秒 · 类别 %3")
+                              .arg(detail)
+                              .arg(m_liveTargetFps)
+                              .arg(folderDisplayName(m_currentCategory))
+                        : detail,
+                    camOk);
+            }
+        }
     } else {
-        add(QStringLiteral("图源"),
-            QStringLiteral("FolderSource · %1 · test/ %2 张 · %3 帧/秒")
-                .arg(folderDisplayName(m_currentCategory))
-                .arg(planned)
-                .arg(m_liveTargetFps),
-            true);
+        const int planned = testImageCount(m_currentCategory);
+        if (m_currentCategory.isEmpty()) {
+            add(QStringLiteral("图源"),
+                QStringLiteral("未选类别，无法用 FolderSource 模拟取流。"),
+                false);
+        } else if (planned <= 0) {
+            add(QStringLiteral("图源"),
+                QStringLiteral("%1 的 test/ 为空。").arg(folderDisplayName(m_currentCategory)),
+                false);
+        } else {
+            add(QStringLiteral("图源"),
+                QStringLiteral("FolderSource · %1 · test/ %2 张 · %3 帧/秒")
+                    .arg(folderDisplayName(m_currentCategory))
+                    .arg(planned)
+                    .arg(m_liveTargetFps),
+                true);
+        }
     }
 
     if (currentKind() == EngineKind::DL) {
@@ -446,11 +560,15 @@ void MainViewModel::rebuildSelfCheck()
         m_consecutiveNgLimit > 0
             ? QStringLiteral("连续不合格 %1 张停线（--live-smoke 默认关闭，保证跑完一类）")
                   .arg(m_consecutiveNgLimit)
-            : QStringLiteral("连续不合格联锁已关，将跑完 FolderSource playlist"),
+            : (usingWebcam()
+                   ? QStringLiteral("连续不合格联锁已关，将持续取流直到手动停止")
+                   : QStringLiteral("连续不合格联锁已关，将跑完 FolderSource playlist")),
         true);
 
     m_selfCheckHint = m_selfCheckPassed
-        ? QStringLiteral("确认后开始模拟产线。相机保持离线。")
+        ? (usingWebcam()
+               ? QStringLiteral("确认后用本机摄像头开线。海康保持离线。")
+               : QStringLiteral("确认后开始模拟产线。海康保持离线。"))
         : QStringLiteral("自检未过，先处理红色项。");
     emit selfCheckChanged();
 }
@@ -532,11 +650,13 @@ bool MainViewModel::loadDatasetPath(const QString& path)
     m_currentDefectType.clear();
     m_currentImagePath.clear();
     m_missingModelDialogShown = false;
-    m_currentBgr.release();
     m_currentGt.release();
-    m_sourceImage = {};
     m_gtOverlayImage = {};
     clearDetection();
+    if (!m_previewRunning) {
+        m_currentBgr.release();
+        m_sourceImage = {};
+    }
     refreshBatchDependent();
     emit hasDatasetChanged();
     emit selectionChanged();
@@ -575,7 +695,9 @@ void MainViewModel::selectNode(const QString& nodeType, const QString& category,
         m_currentImagePath = imagePath;
         if (categoryChanged)
             syncParamsFromSettings();
-        loadCurrentImage();
+        // 预览占画布：只记下路径，切回文件夹再 loadCurrentImage。
+        if (!m_previewRunning)
+            loadCurrentImage();
         emit selectionChanged();
         emit workEnabledChanged();
         refreshStationStatus();
@@ -619,7 +741,7 @@ void MainViewModel::loadCurrentImage()
 
 void MainViewModel::runDetectionForCurrent()
 {
-    if (m_liveRunning || m_liveStarting)
+    if (m_liveRunning || m_liveStarting || m_previewRunning)
         return;
     if (m_currentBgr.empty() || m_currentCategory.isEmpty())
         return;
@@ -1028,8 +1150,68 @@ void MainViewModel::setLiveRunning(bool running)
     }
     m_liveRunning = running;
     emit liveRunningChanged();
+    emit liveSourceKindChanged();
     emit workEnabledChanged();
     emit liveSessionChanged();
+}
+
+void MainViewModel::setPreviewRunning(bool running)
+{
+    if (m_previewRunning == running)
+        return;
+    m_previewRunning = running;
+    emit previewRunningChanged();
+    emit liveSourceKindChanged();
+    emit selectionChanged();
+}
+
+void MainViewModel::startPreview()
+{
+    if (!usingWebcam() || m_liveRunning || m_liveStarting)
+        return;
+    if (m_preview.isRunning()) {
+        setPreviewRunning(true);
+        return;
+    }
+    if (!m_preview.start(0)) {
+        setPreviewRunning(false);
+        const QString msg = m_preview.lastError().isEmpty()
+            ? QStringLiteral("无法打开本机摄像头（设备 0）。")
+            : m_preview.lastError();
+        setStatusTone(QStringLiteral("warn"));
+        setStatusText(msg);
+        showToast(msg);
+        return;
+    }
+    clearDetection();
+    setPreviewRunning(true);
+    setStatusTone(QStringLiteral("ok"));
+    setStatusText(QStringLiteral("本机摄像头预览中…"));
+}
+
+void MainViewModel::stopPreview()
+{
+    // 先落标志，丢掉已入队的预览帧，避免停线/切源后盖住画布。
+    setPreviewRunning(false);
+    m_preview.stop();
+}
+
+void MainViewModel::onPreviewFrame(const QImage& image)
+{
+    if (!m_previewRunning || m_liveRunning || m_liveStarting)
+        return;
+    m_sourceImage = image;
+    emit imageChanged();
+}
+
+void MainViewModel::onPreviewError(const QString& msg)
+{
+    if (!m_previewRunning || m_liveRunning || m_liveStarting)
+        return;
+    setPreviewRunning(false);
+    setStatusTone(QStringLiteral("warn"));
+    setStatusText(msg);
+    showToast(msg);
 }
 
 void MainViewModel::startLive()
@@ -1040,7 +1222,9 @@ void MainViewModel::startLive()
         else if (currentKind() == EngineKind::DL && dlEngineBlocked(m_currentCategory))
             raiseError(missingDlReason(m_currentCategory));
         else
-            raiseError(QStringLiteral("无法开始模拟取流（缺测试图或良品参考）"));
+            raiseError(usingWebcam()
+                           ? QStringLiteral("无法开线（缺类别或良品参考）")
+                           : QStringLiteral("无法开始模拟取流（缺测试图或良品参考）"));
         return;
     }
     if (m_workOrder.trimmed().isEmpty()) {
@@ -1067,7 +1251,7 @@ void MainViewModel::beginLiveSession(const QString& category)
     m_liveLastNg = false;
     m_liveConsecutiveNg = 0;
     m_liveTaktMs = 0;
-    m_livePlannedCount = testImageCount(category);
+    m_livePlannedCount = usingWebcam() ? 0 : testImageCount(category);
     m_liveInterlocked = false;
     m_liveStopReason.clear();
     m_hasLiveSession = false;
@@ -1090,7 +1274,10 @@ void MainViewModel::stopLive()
     emit workEnabledChanged();
     if (was) {
         setStatusTone(QStringLiteral("normal"));
-        setStatusText(QStringLiteral("已停止模拟取流"));
+        setStatusText(usingWebcam() ? QStringLiteral("已停止取流")
+                                    : QStringLiteral("已停止模拟取流"));
+        if (usingWebcam())
+            startPreview();
     }
 }
 
@@ -1111,9 +1298,18 @@ void MainViewModel::onEnginePrepared(bool ok, const QString& category)
         }
         return;
     }
-    auto src = std::make_unique<FolderSource>();
-    src->setFromDataset(m_ctrl.dataset(), category);
-    src->setFps(m_liveTargetFps);
+    std::unique_ptr<IFrameSource> src;
+    if (usingWebcam()) {
+        auto cam = std::make_unique<WebcamSource>();
+        cam->setDeviceIndex(0);
+        cam->setFps(m_liveTargetFps);
+        src = std::move(cam);
+    } else {
+        auto folder = std::make_unique<FolderSource>();
+        folder->setFromDataset(m_ctrl.dataset(), category);
+        folder->setFps(m_liveTargetFps);
+        src = std::move(folder);
+    }
 
     QString sessionId;
     const QString dir = ResultExporter::makeSessionDir(
@@ -1136,9 +1332,15 @@ void MainViewModel::onEnginePrepared(bool ok, const QString& category)
     m_hasLiveSession = true;
     emit liveSessionChanged();
 
+    // 开线前释放预览占用的同一设备；失败则把预览拉回来。
+    stopPreview();
     if (!m_session.start(std::move(src), category)) {
         emit workEnabledChanged();
-        raiseError(QStringLiteral("无法开始模拟取流（该类别没有测试图）"));
+        raiseError(usingWebcam()
+                       ? QStringLiteral("无法打开本机摄像头（设备 0）。")
+                       : QStringLiteral("无法开始模拟取流（该类别没有测试图）"));
+        if (usingWebcam())
+            startPreview();
         return;
     }
     m_liveLatencyMs = 0;
@@ -1148,8 +1350,13 @@ void MainViewModel::onEnginePrepared(bool ok, const QString& category)
     emit liveStatsChanged();
     setLiveRunning(true);
     setStatusTone(QStringLiteral("ok"));
-    setStatusText(QStringLiteral("模拟取流 %1 @ %2 帧/秒（相机离线）…")
-                      .arg(folderDisplayName(category)).arg(m_liveTargetFps));
+    if (usingWebcam()) {
+        setStatusText(QStringLiteral("本机摄像头取流 %1 @ %2 帧/秒…")
+                          .arg(folderDisplayName(category)).arg(m_liveTargetFps));
+    } else {
+        setStatusText(QStringLiteral("模拟取流 %1 @ %2 帧/秒（海康离线）…")
+                          .arg(folderDisplayName(category)).arg(m_liveTargetFps));
+    }
     refreshStationStatus();
 }
 
@@ -1212,9 +1419,13 @@ void MainViewModel::onLiveFrame(const LiveInspectedFrame& frame)
     m_liveLastNg = frame.result.detected();
     if (frame.interlockStop) {
         m_liveInterlocked = true;
-        m_liveStopReason = QStringLiteral("连续不合格联锁（%1 张），已停线。相机仍离线，本班走 FolderSource。")
-                               .arg(frame.consecutiveNgLimit > 0 ? frame.consecutiveNgLimit
-                                                                : m_consecutiveNgLimit);
+        m_liveStopReason = usingWebcam()
+            ? QStringLiteral("连续不合格联锁（%1 张），已停线。本班走 WebcamSource。")
+                  .arg(frame.consecutiveNgLimit > 0 ? frame.consecutiveNgLimit
+                                                   : m_consecutiveNgLimit)
+            : QStringLiteral("连续不合格联锁（%1 张），已停线。海康仍离线，本班走 FolderSource。")
+                  .arg(frame.consecutiveNgLimit > 0 ? frame.consecutiveNgLimit
+                                                   : m_consecutiveNgLimit);
         emit liveSessionChanged();
     }
     setStatusTone(m_liveLastNg ? QStringLiteral("ng") : QStringLiteral("ok"));
@@ -1238,7 +1449,9 @@ void MainViewModel::onLiveFinished(int total, int ngCount)
     const LiveSessionSummary s = m_session.lastSummary();
     if (!s.stopReason.isEmpty()) {
         m_liveInterlocked = true;
-        m_liveStopReason = s.stopReason + QStringLiteral("。相机仍离线，本班走 FolderSource。");
+        m_liveStopReason = s.stopReason + (usingWebcam()
+            ? QStringLiteral("。本班走 WebcamSource。")
+            : QStringLiteral("。海康仍离线，本班走 FolderSource。"));
         emit liveSessionChanged();
         setStatusTone(QStringLiteral("ng"));
         setStatusText(QStringLiteral("联锁停线：%1  |  合格 %2  不合格 %3  直通 %4%")
@@ -1249,12 +1462,17 @@ void MainViewModel::onLiveFinished(int total, int ngCount)
         showToast(QStringLiteral("联锁停线：%1").arg(s.stopReason));
     } else {
         setStatusTone(ngCount > 0 ? QStringLiteral("ng") : QStringLiteral("ok"));
-        setStatusText(QStringLiteral("模拟取流结束：%1 张，合格 %2，不合格 %3，直通 %4%")
+        setStatusText((usingWebcam()
+                           ? QStringLiteral("取流结束：%1 张，合格 %2，不合格 %3，直通 %4%")
+                           : QStringLiteral("模拟取流结束：%1 张，合格 %2，不合格 %3，直通 %4%"))
                           .arg(total)
                           .arg(qMax(0, total - ngCount))
                           .arg(ngCount)
                           .arg(liveYieldPercent(), 0, 'f', 1));
-        showToast(QStringLiteral("模拟取流结束：不合格 %1 / %2").arg(ngCount).arg(total));
+        showToast((usingWebcam()
+                       ? QStringLiteral("取流结束：不合格 %1 / %2")
+                       : QStringLiteral("模拟取流结束：不合格 %1 / %2"))
+                      .arg(ngCount).arg(total));
     }
     refreshStationStatus();
 }
@@ -1274,7 +1492,9 @@ void MainViewModel::applyLiveSummary(const LiveSessionSummary& s)
         m_liveTaktMs = int((s.elapsedSec * 1000.0) / s.done);
     if (!s.stopReason.isEmpty()) {
         m_liveInterlocked = true;
-        m_liveStopReason = s.stopReason + QStringLiteral("。相机仍离线，本班走 FolderSource。");
+        m_liveStopReason = s.stopReason + (usingWebcam()
+            ? QStringLiteral("。本班走 WebcamSource。")
+            : QStringLiteral("。海康仍离线，本班走 FolderSource。"));
     }
     if (!s.sessionDir.isEmpty())
         m_liveSessionDir = s.sessionDir;
@@ -1565,6 +1785,8 @@ void MainViewModel::onBusyChanged(bool busy)
 
 void MainViewModel::onDetectFinished(bool ok, const DetectionResult& result)
 {
+    if (m_previewRunning || m_liveRunning || m_liveStarting)
+        return;
     if (!ok) {
         clearDetection();
         refreshStationStatus();

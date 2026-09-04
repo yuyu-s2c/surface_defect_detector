@@ -10,6 +10,7 @@
 #include "InspectionSession.h"
 #include "MetricsListModel.h"
 #include "NgListModel.h"
+#include "sources/WebcamPreview.h"
 
 #include <QElapsedTimer>
 #include <QImage>
@@ -62,7 +63,11 @@ class MainViewModel : public QObject
     Q_PROPERTY(bool hasImage READ hasImage NOTIFY imageChanged)
     Q_PROPERTY(bool canRunBatch READ canRunBatch NOTIFY workEnabledChanged)
     Q_PROPERTY(bool canStartLive READ canStartLive NOTIFY workEnabledChanged)
+    Q_PROPERTY(int liveSourceKind READ liveSourceKind WRITE setLiveSourceKind NOTIFY liveSourceKindChanged)
+    Q_PROPERTY(QString liveStartButtonText READ liveStartButtonText NOTIFY liveSourceKindChanged)
+    Q_PROPERTY(QString selfCheckIntroText READ selfCheckIntroText NOTIFY liveSourceKindChanged)
     Q_PROPERTY(bool liveRunning READ liveRunning NOTIFY liveRunningChanged)
+    Q_PROPERTY(bool previewRunning READ previewRunning NOTIFY previewRunningChanged)
     Q_PROPERTY(int liveTargetFps READ liveTargetFps WRITE setLiveTargetFps NOTIFY liveTargetFpsChanged)
     Q_PROPERTY(int liveLatencyMs READ liveLatencyMs NOTIFY liveStatsChanged)
     Q_PROPERTY(int liveQueueDepth READ liveQueueDepth NOTIFY liveStatsChanged)
@@ -117,8 +122,8 @@ class MainViewModel : public QObject
     Q_PROPERTY(NgListModel* ngModel READ ngModel CONSTANT)
     Q_PROPERTY(DoPulseModel* doPulseModel READ doPulseModel CONSTANT)
 
-    Q_PROPERTY(QString cameraStatusText READ cameraStatusText NOTIFY stationStatusChanged)
-    Q_PROPERTY(QString sourceStatusText READ sourceStatusText NOTIFY liveRunningChanged)
+    Q_PROPERTY(QString cameraStatusText READ cameraStatusText NOTIFY liveSourceKindChanged)
+    Q_PROPERTY(QString sourceStatusText READ sourceStatusText NOTIFY liveSourceKindChanged)
     Q_PROPERTY(QString plcStatusText READ plcStatusText CONSTANT)
     Q_PROPERTY(QString workOrder READ workOrder WRITE setWorkOrder NOTIFY recipeChanged)
     Q_PROPERTY(QString operatorName READ operatorName WRITE setOperatorName NOTIFY recipeChanged)
@@ -175,7 +180,12 @@ public:
     bool hasImage() const { return !m_sourceImage.isNull(); }
     bool canRunBatch() const;
     bool canStartLive() const;
+    int liveSourceKind() const { return m_liveSourceKind; }
+    QString liveStartButtonText() const;
+    QString selfCheckIntroText() const;
+    bool usingWebcam() const { return m_liveSourceKind == 1; }
     bool liveRunning() const { return m_liveRunning; }
+    bool previewRunning() const { return m_previewRunning; }
     int liveTargetFps() const { return m_liveTargetFps; }
     int liveLatencyMs() const { return m_liveLatencyMs; }
     int liveQueueDepth() const { return m_liveQueueDepth; }
@@ -276,6 +286,7 @@ public:
     Q_INVOKABLE void requestStartLive();
     Q_INVOKABLE void confirmStartLive();
     void setLiveTargetFps(int fps);
+    void setLiveSourceKind(int kind);
     void setWorkOrder(const QString& v);
     void setOperatorName(const QString& v);
     void setConsecutiveNgLimit(int n);
@@ -301,6 +312,8 @@ signals:
     void imageChanged();
     void workEnabledChanged();
     void liveRunningChanged();
+    void previewRunningChanged();
+    void liveSourceKindChanged();
     void liveTargetFpsChanged();
     void liveStatsChanged();
     void paramsDirtyChanged();
@@ -355,6 +368,11 @@ private:
     void onLiveFinished(int total, int ngCount);
     void onLiveError(const QString& msg);
     void setLiveRunning(bool running);
+    void startPreview();
+    void stopPreview();
+    void setPreviewRunning(bool running);
+    void onPreviewFrame(const QImage& image);
+    void onPreviewError(const QString& msg);
 
     void applyLiveSummary(const LiveSessionSummary& s);
     void beginLiveSession(const QString& category);
@@ -366,6 +384,7 @@ private:
 
     DetectionController m_ctrl;
     InspectionSession m_session;
+    WebcamPreview m_preview;
     DatasetTreeModel* m_datasetModel = nullptr;
     BoxListModel* m_boxModel = nullptr;
     MetricsListModel* m_metricsModel = nullptr;
@@ -386,6 +405,8 @@ private:
     bool m_hasCompare = false;
     bool m_liveRunning = false;
     bool m_liveStarting = false;
+    bool m_previewRunning = false;
+    int m_liveSourceKind = 0; // 0=FolderSource，1=WebcamSource；不启动 CameraSource
     int m_engineKind = 0;
     int m_liveTargetFps = InspectionSession::kDefaultFps;
     int m_liveLatencyMs = 0;

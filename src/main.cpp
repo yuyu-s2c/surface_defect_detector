@@ -8,6 +8,7 @@
 #include "sources/FolderSource.h"
 #include "sources/LogRejectSink.h"
 #include "sources/SimulatedDoSink.h"
+#include "sources/WebcamSource.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -21,6 +22,7 @@
 #include <QQuickStyle>
 #include <QScreen>
 #include <QTextStream>
+#include <QTimer>
 #include <QWindow>
 
 #include <memory>
@@ -377,6 +379,177 @@ static int runLiveSmoke(const QString& categoryArg, EngineKind engineKind, OrtEp
     return 0;
 }
 
+// 无头冒烟：本机摄像头限时取流。无 EOF，必须靠 --seconds 停。不是产品 --live。
+static int runWebcamSmoke(const QString& categoryArg, EngineKind engineKind, OrtEpKind epKind,
+                          int fps, int device, int seconds)
+{
+    QTextStream out(stdout);
+
+    QString datasetRoot;
+    QString category;
+    if (QFileInfo::exists(categoryArg) && QFileInfo(categoryArg).isDir()
+        && QDir(categoryArg + QStringLiteral("/test")).exists()) {
+        const QFileInfo catInfo(categoryArg);
+        datasetRoot = catInfo.absolutePath();
+        category = catInfo.fileName();
+    } else {
+        datasetRoot = locateDatasetRoot();
+        category = categoryArg;
+    }
+
+    if (datasetRoot.isEmpty()) {
+        out << "ERROR: 未找到数据集根目录\n";
+        return 2;
+    }
+
+    QString probeDetail;
+    if (!WebcamSource::probe(device, &probeDetail)) {
+        out << "ERROR: " << probeDetail << "\n";
+        return 2;
+    }
+
+    DetectionController ctrl;
+    ctrl.setEngineKind(engineKind);
+    ctrl.setOrtEpKind(epKind);
+    if (!ctrl.loadDataset(datasetRoot)) {
+        out << "ERROR: 数据集扫描失败：" << datasetRoot << "\n";
+        return 2;
+    }
+    if (!ctrl.dataset().categories().contains(category)) {
+        out << "ERROR: 没有类别 " << category << "\n";
+        return 2;
+    }
+    if (!ctrl.prepareEngine(category)) {
+        out << "ERROR: 无法准备引擎（" << category << "）\n";
+        return 2;
+    }
+
+    fps = qBound(InspectionSession::kMinFps, fps, InspectionSession::kMaxFps);
+    seconds = qBound(1, seconds, 60);
+    device = qMax(0, device);
+    auto src = std::make_unique<WebcamSource>();
+    src->setDeviceIndex(device);
+    src->setFps(fps);
+
+    const QString engineName = engineKind == EngineKind::DL
+        ? QStringLiteral("dl") : QStringLiteral("cv");
+    QString sessionId;
+    const QString sessionDir = ResultExporter::makeSessionDir(
+        datasetRoot, category, engineName, &sessionId);
+
+    InspectionSession session(ctrl);
+    auto composite = std::make_unique<CompositeRejectSink>();
+    composite->add(std::make_unique<LogRejectSink>());
+    composite->add(std::make_unique<FileRejectSink>(sessionDir));
+    composite->add(std::make_unique<SimulatedDoSink>(sessionDir));
+    session.setRejectSink(std::move(composite));
+    session.setConsecutiveNgLimit(0);
+    session.setSessionMeta(sessionId, sessionDir, engineName,
+                           engineKind == EngineKind::DL
+                               ? ctrl.ortEpPolicyLabel()
+                               : QStringLiteral("OpenCV CPU"));
+
+    int lastDone = 0;
+    int lastQueue = 0;
+    qint64 lastLatency = 0;
+    double lastFps = 0.0;
+    qint64 maxLatency = 0;
+    int maxQueue = 0;
+    int lastDropped = 0;
+    int lastLate = 0;
+    QObject::connect(&session, &InspectionSession::frameInspected, &session,
+                     [&](const LiveInspectedFrame& f) {
+        lastDone = f.done;
+        lastQueue = f.queueDepth;
+        lastLatency = f.latencyMs;
+        lastFps = f.actualFps;
+        lastDropped = f.dropped;
+        lastLate = f.lateCount;
+        maxLatency = qMax(maxLatency, f.latencyMs);
+        maxQueue = qMax(maxQueue, f.queueDepth);
+        if (f.done == 1 || (f.done % 10) == 0) {
+            out << QStringLiteral("  %1 %2 fps queue=%3 latency=%4 ms %5%6\n")
+                       .arg(f.done)
+                       .arg(f.actualFps, 0, 'f', 1)
+                       .arg(f.queueDepth)
+                       .arg(f.latencyMs)
+                       .arg(f.result.detected() ? QStringLiteral("NG") : QStringLiteral("OK"))
+                       .arg(f.lateEject ? QStringLiteral(" LATE") : QString());
+            out.flush();
+        }
+    });
+
+    int finishedTotal = -1;
+    int finishedNg = -1;
+    QEventLoop loop;
+    QObject::connect(&session, &InspectionSession::finished, &session,
+                     [&](int total, int ng) {
+        finishedTotal = total;
+        finishedNg = ng;
+        loop.quit();
+    });
+    QObject::connect(&session, &InspectionSession::errorOccurred, &session,
+                     [&](const QString& msg) {
+        out << "ERROR: " << msg << "\n";
+        loop.quit();
+    });
+
+    out << "webcam-smoke " << category
+        << " engine=" << engineName
+        << " fps=" << fps
+        << " device=" << device
+        << " seconds=" << seconds
+        << " overflow=drop"
+        << "  " << probeDetail << "\n";
+    out.flush();
+
+    QElapsedTimer wall;
+    wall.start();
+    if (!session.start(std::move(src), category)) {
+        out << "ERROR: InspectionSession 启动失败（本机摄像头打不开）\n";
+        return 2;
+    }
+    QTimer::singleShot(seconds * 1000, &session, [&session]() { session.stop(); });
+    loop.exec();
+    session.stop();
+    const double elapsed = wall.elapsed() / 1000.0;
+    const LiveSessionSummary sum = session.lastSummary();
+
+    if (finishedTotal < 0 && lastDone <= 0) {
+        out << "ERROR: 取流未正常结束\n";
+        return 2;
+    }
+    if (finishedTotal < 0)
+        finishedTotal = lastDone;
+    if (finishedNg < 0)
+        finishedNg = sum.ng;
+    out << QStringLiteral("done=%1 ng=%2 dropped=%3 late=%4 elapsed=%5 s effective=%6 fps\n")
+               .arg(finishedTotal)
+               .arg(finishedNg)
+               .arg(sum.dropped > 0 ? sum.dropped : lastDropped)
+               .arg(sum.lateEject > 0 ? sum.lateEject : lastLate)
+               .arg(elapsed, 0, 'f', 2)
+               .arg(finishedTotal > 0 && elapsed > 0 ? finishedTotal / elapsed : 0.0, 0, 'f', 2);
+    out << QStringLiteral("last: actual=%1 fps queue=%2 latency=%3 ms; max queue=%4 max latency=%5 ms\n")
+               .arg(lastFps, 0, 'f', 1)
+               .arg(lastQueue)
+               .arg(lastLatency)
+               .arg(maxQueue)
+               .arg(maxLatency);
+    out << "session=" << sessionDir << "\n";
+    if (!QFileInfo::exists(sessionDir + QStringLiteral("/session.csv"))
+        || !QFileInfo::exists(sessionDir + QStringLiteral("/do_map.csv"))) {
+        out << "ERROR: 未写出 session.csv / do_map.csv\n";
+        return 2;
+    }
+    if (finishedNg > 0 && !QFileInfo::exists(sessionDir + QStringLiteral("/do_pulses.csv"))) {
+        out << "ERROR: 有不合格但未写出 do_pulses.csv\n";
+        return 2;
+    }
+    out.flush();
+    return 0;
+}
+
 // 按当前屏 availableGeometry 夹紧客户区并居中。固定 1400×900 在 125%/150%
 // 缩放下会连同标题栏超出任务栏以上的可用高度。
 static void placeMainWindow(QWindow* win)
@@ -456,16 +629,18 @@ int main(int argc, char* argv[])
         raw << QString::fromLocal8Bit(argv[i]);
 
     const int liveSmokeIdx = raw.indexOf(QStringLiteral("--live-smoke"));
+    const int webcamSmokeIdx = raw.indexOf(QStringLiteral("--webcam-smoke"));
     const int batchIdx = raw.indexOf(QStringLiteral("--batch"));
-    if (liveSmokeIdx >= 0 || batchIdx >= 0) {
+    if (liveSmokeIdx >= 0 || webcamSmokeIdx >= 0 || batchIdx >= 0) {
         QCoreApplication core(argc, argv);
         QCoreApplication::setOrganizationName(QStringLiteral("surface_defect_detector"));
         QCoreApplication::setApplicationName(QStringLiteral("surface_defect_detector"));
-        const int catIdx = liveSmokeIdx >= 0 ? liveSmokeIdx : batchIdx;
+        const int catIdx = liveSmokeIdx >= 0 ? liveSmokeIdx
+                          : (webcamSmokeIdx >= 0 ? webcamSmokeIdx : batchIdx);
         if (catIdx + 1 >= raw.size()) {
-            QTextStream(stderr) << "用法: surface_defect_detector --batch|--live-smoke <类别>"
+            QTextStream(stderr) << "用法: surface_defect_detector --batch|--live-smoke|--webcam-smoke <类别>"
                                    " [--engine cv|dl] [--provider auto|cpu|dml] [--fps N]"
-                                   " [--overflow block|drop]\n";
+                                   " [--overflow block|drop] [--device N] [--seconds N]\n";
             return 2;
         }
         EngineKind engineKind = EngineKind::Traditional;
@@ -525,6 +700,38 @@ int main(int argc, char* argv[])
         }
         if (liveSmokeIdx >= 0)
             return runLiveSmoke(raw.at(catIdx + 1), engineKind, epKind, fps, overflow);
+        if (webcamSmokeIdx >= 0) {
+            int device = 0;
+            const int deviceIdx = raw.indexOf(QStringLiteral("--device"));
+            if (deviceIdx >= 0) {
+                if (deviceIdx + 1 >= raw.size()) {
+                    QTextStream(stderr) << "用法: --device N\n";
+                    return 2;
+                }
+                bool ok = false;
+                device = raw.at(deviceIdx + 1).toInt(&ok);
+                if (!ok || device < 0) {
+                    QTextStream(stderr) << "无效 --device\n";
+                    return 2;
+                }
+            }
+            int seconds = 8;
+            const int secIdx = raw.indexOf(QStringLiteral("--seconds"));
+            if (secIdx >= 0) {
+                if (secIdx + 1 >= raw.size()) {
+                    QTextStream(stderr) << "用法: --seconds N\n";
+                    return 2;
+                }
+                bool ok = false;
+                seconds = raw.at(secIdx + 1).toInt(&ok);
+                if (!ok) {
+                    QTextStream(stderr) << "无效 --seconds\n";
+                    return 2;
+                }
+            }
+            Q_UNUSED(overflow);
+            return runWebcamSmoke(raw.at(catIdx + 1), engineKind, epKind, fps, device, seconds);
+        }
         return runBatch(raw.at(catIdx + 1), engineKind, epKind);
     }
 

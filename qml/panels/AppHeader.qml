@@ -49,6 +49,14 @@ Rectangle {
 
             Item { Layout.fillWidth: true }
 
+            SourceSwitch {
+                sourceKind: app.liveSourceKind
+                implicitWidth: 200
+                enabled: !app.busy && !app.liveRunning
+                opacity: enabled ? 1 : 0.5
+                onPicked: (k) => app.liveSourceKind = k
+            }
+
             EngineSwitch {
                 engineKind: app.engineKind
                 implicitWidth: 200
@@ -92,7 +100,7 @@ Rectangle {
                     onValueModified: app.liveTargetFps = value
                 }
                 AppButton {
-                    text: app.liveRunning ? "停止" : "模拟开线"
+                    text: app.liveRunning ? "停止" : app.liveStartButtonText
                     primary: !app.liveRunning
                     highlight: app.liveRunning
                     enabled: app.liveRunning || app.canStartLive

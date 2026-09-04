@@ -14,6 +14,11 @@ find_package(Qt6 REQUIRED COMPONENTS Quick QuickControls2 Qml Gui)
 
 # OpenCV-MinGW-Build 预编译包，OpenCVConfig.cmake 位于 x64/mingw/lib
 find_package(OpenCV REQUIRED PATHS "${CMAKE_SOURCE_DIR}/third_party/opencv/x64/mingw/lib")
+if(NOT TARGET opencv_videoio)
+    message(FATAL_ERROR
+        "OpenCV videoio 缺失（P4.0 WebcamSource 需要）。请重新下载 huihut/OpenCV-MinGW-Build "
+        "tag OpenCV-4.5.5-x64 到 third_party/opencv/，不要另找发行版。")
+endif()
 
 # ONNX Runtime DirectML 包（Phase 3.6）：MSVC 构建的 C ABI，MinGW 可链 dll。
 # 缺包时：powershell -File tools/fetch_onnxruntime_dml.ps1
@@ -55,6 +60,10 @@ set(PROJECT_SOURCES
     src/sources/SimulatedDoSink.cpp
     src/sources/FolderSource.h
     src/sources/FolderSource.cpp
+    src/sources/WebcamSource.h
+    src/sources/WebcamSource.cpp
+    src/sources/WebcamPreview.h
+    src/sources/WebcamPreview.cpp
     src/sources/CameraSource.h
     src/sources/CameraSource.cpp
 )
@@ -75,6 +84,7 @@ qt_add_qml_module(surface_defect_detector
         qml/panels/InspectorPanel.qml
         qml/panels/ResultRail.qml
         qml/components/EngineSwitch.qml
+        qml/components/SourceSwitch.qml
         qml/components/ModeSwitch.qml
         qml/components/OverlayChipBar.qml
         qml/components/VerdictBadge.qml
@@ -133,6 +143,7 @@ target_link_libraries(surface_defect_detector PRIVATE
     opencv_core
     opencv_imgproc
     opencv_imgcodecs
+    opencv_videoio
     "${ONNXRUNTIME_DIR}/lib/onnxruntime.dll"
     dxgi
 )
@@ -145,8 +156,17 @@ if(WIN32)
             "${CMAKE_SOURCE_DIR}/third_party/opencv/x64/mingw/bin/libopencv_core455.dll"
             "${CMAKE_SOURCE_DIR}/third_party/opencv/x64/mingw/bin/libopencv_imgproc455.dll"
             "${CMAKE_SOURCE_DIR}/third_party/opencv/x64/mingw/bin/libopencv_imgcodecs455.dll"
+            "${CMAKE_SOURCE_DIR}/third_party/opencv/x64/mingw/bin/libopencv_videoio455.dll"
+            "${CMAKE_SOURCE_DIR}/third_party/opencv/x64/mingw/bin/libopencv_video455.dll"
             $<TARGET_FILE_DIR:surface_defect_detector>
     )
+    if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/opencv/x64/mingw/bin/opencv_videoio_ffmpeg455_64.dll")
+        add_custom_command(TARGET surface_defect_detector POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_SOURCE_DIR}/third_party/opencv/x64/mingw/bin/opencv_videoio_ffmpeg455_64.dll"
+                $<TARGET_FILE_DIR:surface_defect_detector>
+        )
+    endif()
     add_custom_command(TARGET surface_defect_detector POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${ONNXRUNTIME_DIR}/lib/onnxruntime.dll"

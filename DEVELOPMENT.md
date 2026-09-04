@@ -39,6 +39,7 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
 ./build/surface_defect_detector.exe --batch metal_nut --engine dl --provider cpu   # 强制 CPU
 ./build/surface_defect_detector.exe --live-smoke metal_nut --engine dl --fps 5     # 取流冒烟（无窗）
 ./build/surface_defect_detector.exe --live-smoke metal_nut --engine dl --fps 15 --overflow drop
+./build/surface_defect_detector.exe --webcam-smoke metal_nut --engine dl --fps 5  # 本机摄像头限时冒烟
 ```
 
 注意：Ninja 不在 PATH，配置时必须显式传 `CMAKE_MAKE_PROGRAM`。
@@ -60,9 +61,10 @@ surface_defect_detector/
 │   ├── DetectionController.h/.cpp # 应用服务层：数据集 + 引擎缓存 + 批量编排（GUI/CLI 共用）
 │   ├── InspectionSession.h/.cpp   # 取流：有界队列 + 取流/检测双线程 + 班次摘要
 │   ├── LiveSessionTypes.h         # 班次摘要 / 工件记录（session.csv）
-│   ├── sources/                # IFrameSource / FolderSource / CameraSource（空）
-│   │                           # IRejectSink / LogRejectSink / FileRejectSink /
-│   │                           # SimulatedDoSink（点表+脉冲日志） / CompositeRejectSink
+│   ├── sources/                # IFrameSource / FolderSource / WebcamSource /
+│   │                           # WebcamPreview（切源无检测预览） / CameraSource（海康空壳） /
+│   │                           # IRejectSink / LogRejectSink /
+│   │                           # FileRejectSink / SimulatedDoSink / CompositeRejectSink
 │   ├── IDetectionEngine.h      # 检测引擎抽象接口 + DetectionResult 输出契约
 │   ├── DetectionEngine.h/.cpp  # 传统 CV 检测引擎（v0.1 基线，IDetectionEngine 实现）
 │   ├── DLDetectionEngine.h/.cpp # EfficientAD ONNX（P2；3.6 DirectML + 图像级分数过线）
@@ -317,7 +319,8 @@ train/good + 各 1 张 test/good、test/scratch 及 mask，onnx 硬链到约定�
 ```
 IFrameSource
   ├── FolderSource   # 按设定 FPS 吐当前类别 test/（含 good），顺序与 runBatch 一致
-  └── CameraSource   # P4 填海康；本阶段 start() 失败「未接相机」，不接假 SDK
+  ├── WebcamSource   # P4.0 本机 USB；DropOldest；无限流
+  └── CameraSource   # 完整 P4 填海康；本阶段 start() 失败「海康离线」
 InspectionSession    # 有界队列 8 + 取流/检测双线程；NG → LogRejectSink（[DO] REJECT）
 ```
 
@@ -409,11 +412,36 @@ P4 仍等实机。在 3.7 班次骨架上补一条可演示的产线回路，**�
 
 `--live-smoke` 联锁关闭，应仍跑完一类 test 后退出 0；班次目录多 `do_map.csv`，有 NG 时有 `do_pulses.csv`。
 
+### Phase 4.0 本机摄像头取流（预演，非完整 P4）
+
+没有海康时用笔记本 USB 摄像头把「真连续取流」跑通。不改引擎、P2 工作点、`--batch` 口径。
+`CameraSource` 仍空壳（海康离线）。FolderSource / `--live-smoke` 仍是默认可复现路径。
+
+做了：
+
+- `WebcamSource`：OpenCV `VideoCapture` + DirectShow，`DropOldest`，`plannedCount=0`，按目标 FPS 节拍；长边 >700 按比例缩小；`path` 合成 `cam_000123` 给叠图用
+- 顶栏 `SourceSwitch`（文件夹 / 本机摄像头），写入 QSettings `station/liveSourceKind`
+- 切到本机摄像头即 `WebcamPreview` 无检测预览（15 fps）；开线前释放设备给 `InspectionSession`，停线后回到预览
+- 开线自检：预览已出帧则不再 `probe()`（设备已被预览占用）；否则短开短关，打不开不能确认
+- `--webcam-smoke <类>` 默认 8 秒后 `stop()`；无设备退出 2
+- HMI：Webcam 芯片写 **本机摄像头 · OpenCV / WebcamSource**，禁止「相机已连接」
+
+摄像头帧相对 metal_nut/screw 是分布外，整班 NG 是预期。指标仍以 `--batch` / `--live-smoke` 为准。
+
+验证：
+
+```bash
+./build/surface_defect_detector.exe --batch metal_nut
+./build/surface_defect_detector.exe --batch metal_nut --engine dl
+./build/surface_defect_detector.exe --live-smoke metal_nut --engine dl --fps 5
+./build/surface_defect_detector.exe --webcam-smoke metal_nut --engine dl --fps 5
+```
+
 ### Phase 4 产线对接（远期，等实机）
 
 依赖 3.6 的 DirectML、图像级分数、`IFrameSource`，以及 3.7 的 Sink / 丢最旧帧 / 模拟 DO。到货后再填，不在本阶段预写协议：
 
-- `CameraSource`：海康 MVS / MVD 实时取流（本机已装运行时）；`overflowPolicy()` 已返回 `DropOldest`
+- `CameraSource`：海康 MVS / MVD 实时取流（本机已装运行时）；`overflowPolicy()` 已返回 `DropOldest`。P4.0 的 `WebcamSource` 不顶替这一处。
 - 与 PLC / 剔除机构联动（再实现一个真实 DO 的 `IRejectSink`，加进 `CompositeRejectSink`；不要改 `SimulatedDoSink` 当协议）
 
 ## 5. 工程规范

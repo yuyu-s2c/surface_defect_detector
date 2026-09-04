@@ -1,7 +1,8 @@
 import QtQuick
 import QtQuick.Layouts
 
-// 顶栏工位身份：相机离线 / FolderSource 模拟取流 / 模拟 PLC，避免被看成实机已接。
+// 顶栏工位身份：海康离线或本机摄像头 / Folder 或 Webcam 取流 / 模拟 PLC。
+// 不要写成「相机已连接」（那是海康到货后的事）。
 
 Rectangle {
     id: root
@@ -45,12 +46,12 @@ Rectangle {
         Chip {
             label: "相机"
             value: app.cameraStatusText
-            tone: Theme.warn
+            tone: app.liveSourceKind === 1 ? Theme.accent : Theme.warn
         }
         Chip {
             label: "取流"
             value: app.sourceStatusText
-            tone: app.liveRunning ? Theme.accent : Theme.textSecondary
+            tone: (app.liveRunning || app.previewRunning) ? Theme.accent : Theme.textSecondary
         }
         Chip {
             label: "剔除"
