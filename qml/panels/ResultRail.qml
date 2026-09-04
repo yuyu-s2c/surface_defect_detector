@@ -9,6 +9,11 @@ Rectangle {
     signal exportCurrentClicked()
     signal exportLiveClicked()
 
+    // 开线前配方，开线中本班数字，停线后摘要。不要同一屏抢高度。
+    readonly property bool shiftLive: app.liveRunning
+    readonly property bool shiftDone: app.hasLiveSession && !app.liveRunning
+    readonly property bool shiftIdle: !app.liveRunning && !app.hasLiveSession
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
@@ -51,12 +56,13 @@ Rectangle {
         }
 
         ColumnLayout {
+            visible: !root.shiftDone
             Layout.fillWidth: true
             Layout.margins: 12
-            spacing: 10
+            spacing: 8
 
             Text {
-                visible: app.hasImage
+                visible: app.hasImage && !root.shiftDone
                 Layout.fillWidth: true
                 text: "判定依据  分 " + Number(app.imageScore).toFixed(4)
                       + "  /  阈 " + Number(app.imageThreshold).toFixed(4)
@@ -67,8 +73,8 @@ Rectangle {
             }
 
             Rectangle {
-                visible: app.hasImage && app.imageThreshold > 0
-                         && app.imageThreshold < 1e12
+                visible: app.hasImage && !root.shiftDone
+                         && app.imageThreshold > 0 && app.imageThreshold < 1e12
                 Layout.fillWidth: true
                 implicitHeight: 6
                 radius: 3
@@ -81,13 +87,24 @@ Rectangle {
                 }
             }
 
+            EngineSwitch {
+                visible: root.shiftIdle
+                Layout.fillWidth: true
+                implicitHeight: 34
+                engineKind: app.engineKind
+                enabled: !app.busy && !app.liveRunning
+                opacity: enabled ? 1 : 0.5
+                onPicked: (k) => app.engineKind = k
+            }
+
             EngineStatusChip {
+                visible: root.shiftIdle
                 Layout.fillWidth: true
                 implicitHeight: 40
             }
 
             ColumnLayout {
-                visible: !app.liveRunning
+                visible: root.shiftIdle
                 Layout.fillWidth: true
                 spacing: 6
                 Text {
@@ -114,6 +131,20 @@ Rectangle {
                     Layout.fillWidth: true
                     spacing: 8
                     Text {
+                        text: "帧率"
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.smallSize
+                        font.family: Theme.fontFamily
+                    }
+                    AppSpinBox {
+                        Layout.fillWidth: true
+                        from: 1
+                        to: 15
+                        value: app.liveTargetFps
+                        enabled: !app.busy
+                        onValueModified: app.liveTargetFps = value
+                    }
+                    Text {
                         text: "连续 NG"
                         color: Theme.textSecondary
                         font.pixelSize: Theme.smallSize
@@ -139,8 +170,9 @@ Rectangle {
                     wrapMode: Text.WordWrap
                 }
             }
+
             Text {
-                visible: app.liveRunning
+                visible: root.shiftLive
                 Layout.fillWidth: true
                 text: (app.workOrder.length > 0 ? ("工单 " + app.workOrder + "  ·  ") : "")
                       + "连续 NG " + app.liveConsecutiveNg
@@ -152,7 +184,7 @@ Rectangle {
             }
 
             Text {
-                visible: app.hasImage
+                visible: root.shiftIdle && app.hasImage
                 Layout.fillWidth: true
                 text: app.imageInfo
                 color: Theme.textSecondary
@@ -163,16 +195,21 @@ Rectangle {
             }
         }
 
-        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
+        Rectangle {
+            visible: root.shiftLive || root.shiftDone
+            Layout.fillWidth: true
+            height: 1
+            color: Theme.border
+        }
 
         ColumnLayout {
-            visible: app.hasLiveSession || app.liveRunning
+            visible: root.shiftLive || root.shiftDone
             Layout.fillWidth: true
             Layout.margins: 12
             spacing: 8
 
             Text {
-                text: app.liveRunning ? "本班进行中" : "上一班次"
+                text: root.shiftLive ? "本班进行中" : "上一班次"
                 color: Theme.textSecondary
                 font.pixelSize: Theme.smallSize
                 font.family: Theme.fontFamily
@@ -203,21 +240,25 @@ Rectangle {
                 rowSpacing: 8
                 StatTile {
                     Layout.fillWidth: true
+                    compact: true
                     label: "合格"
                     value: String(app.liveOkCount)
                 }
                 StatTile {
                     Layout.fillWidth: true
+                    compact: true
                     label: "不合格"
                     value: String(app.liveNgCount)
                 }
                 StatTile {
                     Layout.fillWidth: true
+                    compact: true
                     label: "直通率"
                     value: Number(app.liveYieldPercent).toFixed(1) + "%"
                 }
                 StatTile {
                     Layout.fillWidth: true
+                    compact: true
                     label: "节拍"
                     value: app.liveTaktMs > 0 ? (app.liveTaktMs + " ms") : "—"
                 }
@@ -245,83 +286,29 @@ Rectangle {
                     color: Theme.danger
                 }
             }
-            GridLayout {
+            Text {
                 Layout.fillWidth: true
-                columns: 2
-                columnSpacing: 8
-                rowSpacing: 4
-                Text { text: "丢帧"; color: Theme.textSecondary; font.pixelSize: Theme.smallSize; font.family: Theme.fontFamily }
-                Text { text: String(app.liveDroppedCount); color: Theme.textPrimary; font.pixelSize: Theme.smallSize; font.family: Theme.monoFamily }
-                Text { text: "迟剔除"; color: Theme.textSecondary; font.pixelSize: Theme.smallSize; font.family: Theme.fontFamily }
-                Text { text: String(app.liveLateCount); color: Theme.textPrimary; font.pixelSize: Theme.smallSize; font.family: Theme.monoFamily }
-                Text { text: "延迟"; color: Theme.textSecondary; font.pixelSize: Theme.smallSize; font.family: Theme.fontFamily }
-                Text {
-                    text: app.liveLatencyMs + " ms（峰值 " + app.liveMaxLatencyMs + "）"
-                    color: Theme.textPrimary
-                    font.pixelSize: Theme.smallSize
-                    font.family: Theme.monoFamily
-                }
-                Text { text: "队列"; color: Theme.textSecondary; font.pixelSize: Theme.smallSize; font.family: Theme.fontFamily }
-                Text {
-                    text: app.liveQueueDepth + "/" + app.liveQueueMax
-                    color: Theme.textPrimary
-                    font.pixelSize: Theme.smallSize
-                    font.family: Theme.monoFamily
-                }
+                text: "丢帧 " + app.liveDroppedCount
+                      + "  ·  迟剔除 " + app.liveLateCount
+                      + "  ·  延迟 " + app.liveLatencyMs + " ms"
+                      + "  ·  队列 " + app.liveQueueDepth + "/" + app.liveQueueMax
+                color: Theme.textSecondary
+                font.pixelSize: Theme.smallSize
+                font.family: Theme.monoFamily
+                wrapMode: Text.WordWrap
             }
-
             Text {
                 visible: app.doPulseModel.count > 0
-                text: "模拟 DO 脉冲"
+                Layout.fillWidth: true
+                text: "模拟 DO 脉冲  " + app.doPulseModel.count + " 次"
                 color: Theme.textSecondary
                 font.pixelSize: Theme.smallSize
                 font.family: Theme.fontFamily
             }
-            ListView {
-                visible: app.doPulseModel.count > 0
-                Layout.fillWidth: true
-                implicitHeight: Math.min(app.doPulseModel.count * 36, 108)
-                clip: true
-                model: app.doPulseModel
-                boundsBehavior: Flickable.StopAtBounds
-                delegate: Rectangle {
-                    required property int seq
-                    required property string point
-                    required property string action
-                    required property string fileName
-                    required property string defectLabel
-                    required property bool lateEject
-                    width: ListView.view.width
-                    height: 36
-                    color: "transparent"
-                    Column {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 1
-                        Text {
-                            width: parent.width
-                            text: point + "  " + action + "  " + defectLabel
-                            color: Theme.danger
-                            font.pixelSize: Theme.smallSize
-                            font.family: Theme.monoFamily
-                            elide: Text.ElideRight
-                        }
-                        Text {
-                            width: parent.width
-                            text: fileName + (lateEject ? "  ·  迟剔除" : "")
-                            color: Theme.textSecondary
-                            font.pixelSize: 10
-                            font.family: Theme.monoFamily
-                            elide: Text.ElideRight
-                        }
-                    }
-                }
-            }
         }
 
         Text {
-            visible: app.hasLiveSession || app.liveRunning
+            visible: root.shiftLive || root.shiftDone
             Layout.fillWidth: true
             Layout.leftMargin: 12
             Layout.rightMargin: 12
@@ -333,9 +320,9 @@ Rectangle {
         }
 
         Item {
-            visible: app.hasLiveSession || app.liveRunning
+            visible: root.shiftLive || root.shiftDone
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            Layout.fillHeight: root.shiftLive || root.shiftDone
 
             ListView {
                 id: ngList
@@ -399,13 +386,13 @@ Rectangle {
         }
 
         BoxTable {
-            visible: !app.liveRunning && !app.hasLiveSession
+            visible: root.shiftIdle
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            Layout.fillHeight: root.shiftIdle
         }
 
         AppButton {
-            visible: !app.hasLiveSession && !app.liveRunning
+            visible: root.shiftIdle
             Layout.fillWidth: true
             Layout.margins: 12
             text: "导出当前图"
@@ -414,8 +401,62 @@ Rectangle {
             onClicked: root.exportCurrentClicked()
         }
 
+        ColumnLayout {
+            visible: root.shiftDone
+            Layout.fillWidth: true
+            Layout.leftMargin: 12
+            Layout.rightMargin: 12
+            Layout.topMargin: 8
+            spacing: 6
+            Text {
+                text: "下一班配方"
+                color: Theme.textSecondary
+                font.pixelSize: Theme.smallSize
+                font.family: Theme.fontFamily
+            }
+            AppTextField {
+                Layout.fillWidth: true
+                text: app.workOrder
+                placeholderText: "工单号"
+                enabled: !app.busy
+                onEditingFinished: app.workOrder = text
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                Text {
+                    text: "帧率"
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.smallSize
+                    font.family: Theme.fontFamily
+                }
+                AppSpinBox {
+                    Layout.fillWidth: true
+                    from: 1
+                    to: 15
+                    value: app.liveTargetFps
+                    enabled: !app.busy
+                    onValueModified: app.liveTargetFps = value
+                }
+                Text {
+                    text: "连续 NG"
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.smallSize
+                    font.family: Theme.fontFamily
+                }
+                AppSpinBox {
+                    Layout.fillWidth: true
+                    from: 0
+                    to: 200
+                    value: app.consecutiveNgLimit
+                    enabled: !app.busy
+                    onValueModified: app.consecutiveNgLimit = value
+                }
+            }
+        }
+
         AppButton {
-            visible: app.canExportLive
+            visible: root.shiftDone && app.canExportLive
             Layout.fillWidth: true
             Layout.margins: 12
             text: "导出班次"

@@ -1,32 +1,32 @@
 # surface_defect_detector
 
-Desktop tool for industrial surface defect detection (Qt6 Quick / QML + OpenCV + EfficientAD ONNX).
+Industrial surface-defect inspection workstation (Qt6 Quick / QML + OpenCV + EfficientAD ONNX).
 
-Status, architecture, build commands and measured metrics: [DEVELOPMENT.md](DEVELOPMENT.md).
-Agent conventions: [AGENTS.md](AGENTS.md). Training: [tools/training/TRAIN.md](tools/training/TRAIN.md).
+- Phases, architecture, measured metrics: [DEVELOPMENT.md](DEVELOPMENT.md)
+- Phase diary: [DEVELOPMENT-HISTORY.md](DEVELOPMENT-HISTORY.md)
+- Agent conventions: [AGENTS.md](AGENTS.md)
+- Training: [tools/training/TRAIN.md](tools/training/TRAIN.md)
 
-Phases 1–3.7 are done (DirectML, image-level score, zero-code new-category onboarding,
-simulated folder streaming, shift/reject archive, inspect/analyze layout).
-An offline station loop was added on top (pre-run self-check, simulated PLC/DO point table,
-takt/yield, consecutive-NG interlock), plus **P4.0 laptop webcam** (`WebcamSource`, header switch).
-Full Phase 4 (Hikvision/PLC) still waits on hardware: swap in `CameraSource` and add a real-DO
-`IRejectSink`. Do not treat `CameraSource` as a fake live feed.
+Phases 1–3.7, the offline station loop, P4.0 laptop webcam, and the workstation-readability pass are done. Full Phase 4 (Hikvision + real DO) still waits on hardware: implement `CameraSource` and add a real-DO `IRejectSink`. Do not treat `CameraSource` as a fake live feed.
 
-## 5-minute demo with no camera
+Metrics come from `--batch` / `--live-smoke`. Laptop-webcam frames are out-of-distribution vs `metal_nut` / `screw`; an all-NG shift is expected.
 
-On the Windows machine, with the repo root as the dataset root (`metal_nut/` present).
-ONNX under `models/metal_nut/...` is optional (traditional CV works without it).
+## 5-minute demo with no industrial camera
+
+Windows box, repo root as the dataset root (`metal_nut/` present). ONNX under `models/metal_nut/...` is optional (traditional CV works without it). The GUI is Chinese; quoted labels below match the running app.
 
 1. Run `./build/surface_defect_detector.exe` and open the dataset root.
-2. Stay in **Inspect** mode, select `metal_nut`.
-3. The header must show **camera offline / FolderSource simulation / simulated PLC·DO0.0** (folder mode). Switching to **本机摄像头** shows **laptop camera · OpenCV / WebcamSource**, never “camera connected”.
-4. Fill a work order (default `WO-YYYYMMDD`). Consecutive-NG limit defaults to 8.
-5. Click **模拟开线** (or Space) → self-check → confirm. `CameraSource` is not started. Webcam mode uses **开线** and probes the device in self-check.
-6. Watch OK/NG, yield, takt, the consecutive-NG bar, and DO0.0 pulses. After 8 consecutive NG the line **interlocks**. Webcam frames vs metal_nut/screw are out-of-distribution; all-NG is expected.
+2. Stay in **检测** (Inspect). Select `metal_nut`. Switch **传统 CV / EfficientAD** above the recipe on the right rail (in **分析** / Analyze the engine switch is in the header).
+3. The identity bar should read **相机离线 / 模拟取流 · FolderSource / 模拟 PLC · DO0.0**, never “camera connected”. The header switches **文件夹 / 本机摄像头** (folder is default). Webcam shows a no-detect preview at once, the bar becomes **本机摄像头 · OpenCV / 预览中 · WebcamSource**, and the canvas shows an out-of-distribution banner. Detection starts only after 开线.
+4. Fill the work order (default `WO-YYYYMMDD`). Consecutive-NG defaults to 8; target FPS (1–15) is in the same recipe block.
+5. Click **模拟开线** (or Space) → self-check → confirm. `CameraSource` is not started. Webcam mode uses **开线**; if preview already has a frame, self-check does not probe again.
+6. Watch OK/NG, yield, takt, and the consecutive-NG bar. After 8 consecutive NG the line **interlocks**.
 7. Open `_sessions/<shift>/`: `session.csv`, `rejects.csv`, `do_map.csv`, `do_pulses.csv`.
-8. To run a full category: switch back to **文件夹**, set consecutive NG to **0** (same as `--live-smoke`).
+8. To run a full `test/` category: switch back to **文件夹**, set consecutive NG to **0** (same as `--live-smoke`).
 
-Phase 4 is still only: implement `CameraSource` (`overflowPolicy()` already returns drop-oldest) and add a real DO sink to `CompositeRejectSink`. Do not turn `SimulatedDoSink` into a fieldbus.
+Phase 4 is still only two swaps: implement `CameraSource` (`overflowPolicy()` already returns drop-oldest) and add a real DO sink to `CompositeRejectSink`. Do not turn `SimulatedDoSink` into a fieldbus.
+
+## CLI
 
 ```bash
 ./build/surface_defect_detector.exe
@@ -36,14 +36,9 @@ Phase 4 is still only: implement `CameraSource` (`overflowPolicy()` already retu
 ./build/surface_defect_detector.exe --live-smoke metal_nut --engine dl --fps 5
 ./build/surface_defect_detector.exe --live-smoke metal_nut --engine dl --fps 15 --overflow drop
 ./build/surface_defect_detector.exe --webcam-smoke metal_nut --engine dl --fps 5
+./build/surface_defect_detector.exe --webcam-smoke metal_nut --engine dl --fps 15 --seconds 8
 ```
 
-GUI overlay: red = ground-truth mask, green = detection. Header switches Inspect / Analyze;
-the inspect rail shows OK/NG, yield/takt and the shift reject / simulated DO list.
-Streaming plays `test/` at a set FPS (folder source); rejects log `[DO] REJECT` / `[PLC-SIM]`
-and write `_sessions/`. `--batch` does not read GUI settings, work orders, or the interlock.
-`--live-smoke` keeps consecutive-NG interlock off so a category finishes.
+`--batch` uses the same metrics as DEVELOPMENT.md §4 and does not read GUI settings, work orders, or the interlock. Image-level defaults to score-over-threshold (area gate is a comparison column). `--live-smoke` keeps the consecutive-NG interlock off so a category finishes. `--webcam-smoke` runs a timed webcam session (default 8 s); no device → exit 2, no crash.
 
-New category, no code change: drop `<cat>/train/good` and `<cat>/test/...` at the dataset root;
-for DL also place `models/<cat>/weights/onnx/<cat>.onnx` (calibration needs at least 3 good images).
-Unknown categories use k=3 / area gate 1000. Details: [DEVELOPMENT.md](DEVELOPMENT.md) work item 3.
+New category, no code change: drop `<cat>/train/good` and `<cat>/test/...` at the dataset root; for DL also place `models/<cat>/weights/onnx/<cat>.onnx` (calibration needs at least 3 good images). Unknown categories use k=3 / area gate 1000. Layout: [DEVELOPMENT.md](DEVELOPMENT.md) §5.

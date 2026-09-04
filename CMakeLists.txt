@@ -106,6 +106,7 @@ qt_add_qml_module(surface_defect_detector
         qml/components/EngineStatusChip.qml
         qml/components/StationIdentityBar.qml
         qml/components/SelfCheckDialog.qml
+        qml/components/AppDialog.qml
         qml/components/AppTextField.qml
     SOURCES
         src/viewmodels/MainViewModel.h

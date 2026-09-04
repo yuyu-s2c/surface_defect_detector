@@ -7,6 +7,12 @@ Rectangle {
 
     function fitCanvas() { canvas.fitView() }
 
+    readonly property bool webcamOodHint: app.liveSourceKind === 1
+                                          && (app.previewRunning || app.liveRunning)
+                                          && !app.liveInterlocked
+    readonly property bool stationBannerOn: app.liveInterlocked
+                                            || (!app.liveRunning && app.stationAlert.length > 0)
+
     InspectionCanvas {
         id: canvas
         anchors.fill: parent
@@ -33,21 +39,27 @@ Rectangle {
         visible: !app.hasImage && !app.busy && !app.liveRunning && !app.previewRunning && app.stationAlert.length === 0
         title: app.hasDataset ? "从左侧选择一张测试图" : "先打开数据集根目录"
         subtitle: app.hasDataset
-                  ? "滚轮缩放，左键拖拽平移。绿 = 检出位置。空格开线自检（顶栏可切文件夹 / 本机摄像头）。"
+                  ? "滚轮缩放，左键拖拽平移。绿 = 检出位置。空格开线自检；帧率在右侧配方。"
                   : "顶栏「更多」或 Ctrl+O。目录里放各类的 train/good 与 test/。"
     }
 
     StationBanner {
         id: banner
-        visible: app.liveInterlocked || (!app.liveRunning && app.stationAlert.length > 0)
+        visible: stationBannerOn || webcamOodHint
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: 12
         anchors.topMargin: app.hasImage ? 48 : 12
-        message: app.liveInterlocked ? app.liveStopReason : app.stationAlert
-        isError: app.liveInterlocked ? true : app.stationAlertIsError
-        pathHint: (!app.liveInterlocked && app.engineKind === 1 && app.expectedOnnxPath.length > 0) ? app.expectedOnnxPath : ""
+        message: app.liveInterlocked ? app.liveStopReason
+               : (!app.liveRunning && app.stationAlert.length > 0) ? app.stationAlert
+               : "本机画面相对当前类别是分布外，整班不合格是预期。指标以文件夹开线 / 批处理为准。"
+        isError: app.liveInterlocked ? true
+               : (!app.liveRunning && app.stationAlert.length > 0) ? app.stationAlertIsError
+               : false
+        pathHint: (!app.liveInterlocked && !webcamOodHint
+                   && app.engineKind === 1 && app.expectedOnnxPath.length > 0)
+                  ? app.expectedOnnxPath : ""
     }
 
     OverlayChipBar {

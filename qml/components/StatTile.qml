@@ -4,7 +4,8 @@ Rectangle {
     id: root
     property string label: ""
     property string value: "—"
-    implicitHeight: 64
+    property bool compact: false
+    implicitHeight: compact ? 52 : 64
     radius: Theme.radius
     color: Theme.bgElevated
     border.color: Theme.border
@@ -23,7 +24,7 @@ Rectangle {
         Text {
             text: root.value
             color: Theme.textPrimary
-            font.pixelSize: Theme.statSize
+            font.pixelSize: root.compact ? 16 : Theme.statSize
             font.family: Theme.monoFamily
             font.bold: true
             elide: Text.ElideRight

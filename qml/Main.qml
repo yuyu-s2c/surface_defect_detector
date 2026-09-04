@@ -116,15 +116,11 @@ ApplicationWindow {
         onAccepted: app.loadDataset(selectedFolder)
     }
 
-    Dialog {
+    AppDialog {
         id: errorDialog
-        modal: true
-        anchors.centerIn: parent
         title: "需要处理"
         standardButtons: Dialog.Ok
         width: 480
-        palette.window: Theme.bgElevated
-        palette.windowText: Theme.textPrimary
         Label {
             text: app.errorMessage
             wrapMode: Text.WordWrap
@@ -133,15 +129,11 @@ ApplicationWindow {
         }
     }
 
-    Dialog {
+    AppDialog {
         id: aboutDialog
-        modal: true
-        anchors.centerIn: parent
         title: "关于本工作站"
         standardButtons: Dialog.Ok
         width: 520
-        palette.window: Theme.bgElevated
-        palette.windowText: Theme.textPrimary
         Column {
             width: parent.width
             spacing: 10

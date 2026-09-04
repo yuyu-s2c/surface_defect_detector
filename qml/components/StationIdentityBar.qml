@@ -62,15 +62,6 @@ Rectangle {
         Item { Layout.fillWidth: true }
 
         Text {
-            visible: app.workOrder.length > 0
-            text: "工单  " + app.workOrder
-            color: Theme.textPrimary
-            font.pixelSize: Theme.smallSize
-            font.family: Theme.monoFamily
-            elide: Text.ElideRight
-            Layout.maximumWidth: 220
-        }
-        Text {
             visible: app.liveInterlocked
             text: "联锁停线"
             color: Theme.danger

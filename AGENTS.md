@@ -1,19 +1,19 @@
 # AGENTS.md
 
-给 AI 代理的项目工作指南。阶段规划与实测指标见 [DEVELOPMENT.md](DEVELOPMENT.md)。
+给 AI 代理的项目工作指南。现行规格与口径表见 [DEVELOPMENT.md](DEVELOPMENT.md)；阶段实施日记见 [DEVELOPMENT-HISTORY.md](DEVELOPMENT-HISTORY.md)。
 
 ## 项目概况
 
-工业产品表面缺陷检测工具：Qt6 Quick（QML + MVVM）桌面应用 + OpenCV 传统检测（v0.1）
-+ EfficientAD ONNX（Phase 2，已收住）+ Phase 3 工程化（参数/导出/双引擎对比/GUI 异步）
-+ Phase 3.5 QML/MVVM 界面重做。
-数据集为 MVTec AD（metal_nut、screw，无监督设定：train/ 只有良品）。
-训练说明见 tools/training/TRAINING_NOTES.md。Phase 3.6（DirectML / 图像级分数过线 /
-新类别零改代码接入 / 模拟取流）与 Phase 3.7（班次落盘 / 检测·分析两态 / 丢最旧帧策略）已完成。
-离线工位闭环（开线自检 / 模拟 DO 点表 / 节拍直通率 / 连续 NG 联锁）已补上。
-P4.0 本机摄像头（`WebcamSource`）可切源取流；切到 Webcam 即 `WebcamPreview` 无检测预览，
-开线才进 `InspectionSession`。海康 `CameraSource` 仍空壳。
-完整 Phase 4（海康/PLC）等实机，只换 `CameraSource` 并加一个真实 DO 的 `IRejectSink`。
+工业产品表面缺陷检测工作站：Qt6 Quick（QML + MVVM）+ OpenCV 传统检测（v0.1）
++ EfficientAD ONNX（Phase 2，已收住）。数据集 MVTec AD（metal_nut、screw，
+`train/` 只有良品）。训练见 tools/training/TRAINING_NOTES.md。
+
+已完成到 P4.0 本机摄像头 + 工位可读性。海康 `CameraSource` 仍空壳。完整 Phase 4
+（海康/PLC）等实机，只换 `CameraSource` 并加一个真实 DO 的 `IRejectSink`。
+切到 Webcam 即 `WebcamPreview` 无检测预览，开线才进 `InspectionSession`。
+
+检测态顶栏只留模式 / 图源 / 开线；帧率在结果轨配方；引擎在检测态结果轨或分析态顶栏。
+不要把引擎或帧率塞回检测态顶栏，不要重做 GUI，不要用传统 CV 给摄像头刷检出率（分布外）。
 
 ## 构建与运行
 
@@ -65,6 +65,7 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
   有界队列），同步 `detect()`，不走 `*Async`。图源：`FolderSource`（默认 / `--live-smoke`）
   或 `WebcamSource`（顶栏 / `--webcam-smoke`）；切到 Webcam 先走 `WebcamPreview` 预览，
   开线才进 Session。不要把 `CameraSource` 当假直播。
+  检测态顶栏不要再挂引擎/帧率（帧率在结果轨配方；引擎在结果轨或分析态顶栏）。
   NG 走 `IRejectSink`（日志 + `_sessions/` + 模拟 DO 点表）。
   不要把 Controller / cv::Mat / Session 暴露给 QML。GUI 分检测/分析两态，耗时路径走
   Controller 工作线程 + 画布蒙层/底栏进度；`--batch` 仍同步，不读 QSettings。

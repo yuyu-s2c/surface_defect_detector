@@ -1,34 +1,34 @@
 # surface_defect_detector
 
-工业产品表面缺陷检测桌面工具（Qt6 Quick / QML + OpenCV + EfficientAD ONNX）。
+工业产品表面缺陷检测工作站（Qt6 Quick / QML + OpenCV + EfficientAD ONNX）。
 
-阶段状态、架构、构建命令和实测指标见 [DEVELOPMENT.md](DEVELOPMENT.md)。
-给 AI 代理的约定见 [AGENTS.md](AGENTS.md)。训练见 [tools/training/TRAIN.md](tools/training/TRAIN.md)。
+- 阶段、架构、实测指标：[DEVELOPMENT.md](DEVELOPMENT.md)
+- 阶段实施日记：[DEVELOPMENT-HISTORY.md](DEVELOPMENT-HISTORY.md)
+- AI 代理约定：[AGENTS.md](AGENTS.md)
+- 训练：[tools/training/TRAIN.md](tools/training/TRAIN.md)
 
-当前进度：Phase 1～3.7 已完成（DirectML / 图像级分数过线 / 新类别零改代码接入 /
-模拟取流 / 班次落盘 / 检测·分析两态布局）。另补离线工位闭环（开线自检 / 模拟 PLC·DO /
-节拍与直通率 / 连续 NG 联锁）与 **P4.0 本机摄像头**（`WebcamSource`，顶栏可切源）。
-完整 Phase 4 产线对接等实机，只换 `CameraSource` 并加一个真实 DO 的 `IRejectSink`。
-海康槽位保持离线；不要把 `CameraSource` 当假直播。
+P1～P3.7、离线工位闭环、P4.0 本机摄像头、工位可读性已完成。完整 Phase 4（海康 + 真实 DO）等实机：只换 `CameraSource`，再加一个真实 DO 的 `IRejectSink`。不要把 `CameraSource` 当假直播。
+
+识别数字以 `--batch` / `--live-smoke` 为准。本机摄像头相对 `metal_nut` / `screw` 是分布外，整班 NG 是预期。
 
 ## 无相机 5 分钟演示
 
-Windows 本机已构建、数据集在仓库根、`models/metal_nut/.../metal_nut.onnx` 可选（无 ONNX 用传统 CV）。
+Windows 本机已构建，数据集在仓库根（含 `metal_nut/`）。`models/metal_nut/.../metal_nut.onnx` 可选，没有就用传统 CV。
 
-1. 启动 `./build/surface_defect_detector.exe`，打开数据集根（含 `metal_nut/`）。
-2. 顶栏保持 **检测** 态，左侧点 `metal_nut`。引擎可选 EfficientAD 或传统 CV。
-3. 顶栏应看到 **相机离线 / 模拟取流 FolderSource / 模拟 PLC·DO0.0**，没有「相机已连接」。
-   顶栏可切 **文件夹 / 本机摄像头**；默认文件夹。切到摄像头时画布立即预览（无检测），
-   芯片改为 **本机摄像头 · OpenCV / 预览中 · WebcamSource**，仍不要写成「相机已连接」。开线才开始检测。
-4. 右侧填工单（默认同日 `WO-YYYYMMDD`），连续 NG 默认 8。
-5. 点 **模拟开线**（或空格）→ 看开线自检 → **确认开线**。不会启动 `CameraSource`。
-   本机摄像头模式下按钮为 **开线**，自检会短开短关探活设备。
-6. 结果轨：合格/不合格、直通率、节拍、连续 NG 条、模拟 DO0.0 脉冲。约 8 张连续不合格后 **联锁停线**。
-   摄像头对着桌子/人脸时整班 NG 是预期（相对 metal_nut/screw 分布外），指标仍以 `--batch` / `--live-smoke` 为准。
+1. 启动 `./build/surface_defect_detector.exe`，打开数据集根。
+2. 顶栏保持 **检测**，左侧点 `metal_nut`。引擎在右侧配方上方切 **传统 CV / EfficientAD**（分析态改在顶栏切）。
+3. 身份条应为 **相机离线 / 模拟取流 · FolderSource / 模拟 PLC · DO0.0**，不要出现「相机已连接」。
+   顶栏可切 **文件夹 / 本机摄像头**（默认文件夹）。切到摄像头后画布立即预览（无检测），身份条改为 **本机摄像头 · OpenCV / 预览中 · WebcamSource**，并出现分布外横幅。开线才检测。
+4. 右侧填工单（默认同日 `WO-YYYYMMDD`）、连续 NG（默认 8）、帧率（1–15，同一配方区）。
+5. 点 **模拟开线**（或空格）→ 开线自检 → **确认开线**。不会启动 `CameraSource`。
+   摄像头模式下按钮为 **开线**；预览已出帧则不再探活，否则自检会短开短关。
+6. 结果轨看合格/不合格、直通率、节拍、连续 NG。约 8 张连续不合格后 **联锁停线**。
 7. 停线后打开 `_sessions/<班次>/`：`session.csv`、`rejects.csv`、`do_map.csv`、`do_pulses.csv`。
-8. 想跑完整一类 test：切回 **文件夹**，把连续 NG 调到 **0** 再开线（与 `--live-smoke` 相同，联锁关闭）。
+8. 要跑完整一类 `test/`：切回 **文件夹**，连续 NG 调到 **0** 再开线（与 `--live-smoke` 相同，联锁关闭）。
 
 完整 Phase 4 到货后只换两处：实现 `CameraSource`（`overflowPolicy()` 已是丢最旧帧），再实现一个真实 DO 的 `IRejectSink` 加进 `CompositeRejectSink`。不要改 `SimulatedDoSink` 当现场总线。
+
+## 命令行
 
 ```bash
 # GUI
@@ -44,16 +44,9 @@ Windows 本机已构建、数据集在仓库根、`models/metal_nut/.../metal_nu
 ./build/surface_defect_detector.exe --webcam-smoke metal_nut --engine dl --fps 15 --seconds 8
 ```
 
-GUI 为暗色质检台（QML）：红=GT 标注，绿=检测结果。顶栏分检测/分析两态；检测态右侧结果轨
-给出合格/不合格、直通率/节拍与本班 NG / 模拟 DO 列表。顶栏可切文件夹源（按 FPS 吐 `test/`）
-或本机 USB 摄像头（`WebcamSource`，丢最旧帧）。不合格打 `[DO] REJECT` / `[PLC-SIM] DO0.0`
-并写入数据集根 `_sessions/`。DL 默认 DirectML（失败回 CPU）。
-切深度学习时若尚无该 EP 的标定缓存，会跑一遍 `train/good`（DML 约十几秒，不是训练）；
-之后启动复用模型旁的 `.calib.json`（v3，键含 EP）。`--batch` 图像级默认分数过线，
-另打面积门对照列；不读 GUI 设置。`--provider cpu|dml|auto`。`--overflow block|drop`
-只影响取流队列（Folder 默认 block，保证跑完一类 test）。`--live-smoke` 关闭连续 NG 联锁。
-`--webcam-smoke` 限时跑本机摄像头（默认 8 秒），打不开设备退出 2，不崩。
+- `--batch` 图像级默认分数过线，另打面积门对照列。DL 默认 DirectML（失败回 CPU）；`--provider cpu|dml|auto`。
+- `--overflow block|drop` 只影响取流队列（Folder 默认 block，保证跑完一类 test）。
+- `--live-smoke` 关闭连续 NG 联锁，应跑完一类 test 后退出 0。
+- `--webcam-smoke` 限时跑本机摄像头（默认 8 秒）；打不开设备退出 2，不崩。
 
-新类别不改代码：在数据集根放入 `<类>/train/good` + `<类>/test/...`，DL 再放
-`models/<类>/weights/onnx/<类>.onnx`（标定至少 3 张良品）。无专表工作点时用 k=3 /
-面积门 1000。步骤与验收见 [DEVELOPMENT.md](DEVELOPMENT.md) 工作项 3。
+构建、标定缓存、新类别接入见 [DEVELOPMENT.md](DEVELOPMENT.md) 第 2 / 5 节。新类别不改代码：数据集根放入 `<类>/train/good` + `<类>/test/...`，DL 再放 `models/<类>/weights/onnx/<类>.onnx`（标定至少 3 张良品）。无专表工作点时用 k=3 / 面积门 1000。

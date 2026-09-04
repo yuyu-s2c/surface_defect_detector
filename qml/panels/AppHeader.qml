@@ -13,6 +13,8 @@ Rectangle {
     signal datasetClicked()
     signal aboutClicked()
 
+    readonly property bool inspectMode: app.workMode === 0
+
     Rectangle {
         anchors.bottom: parent.bottom
         width: parent.width
@@ -32,11 +34,14 @@ Rectangle {
             Item { width: 12 }
 
             Text {
+                visible: root.width >= 1040
                 text: "表面缺陷检测"
                 color: Theme.textPrimary
                 font.pixelSize: Theme.titleSize
                 font.bold: true
                 font.family: Theme.fontFamily
+                elide: Text.ElideRight
+                Layout.maximumWidth: 128
                 Layout.alignment: Qt.AlignVCenter
             }
 
@@ -50,14 +55,16 @@ Rectangle {
             Item { Layout.fillWidth: true }
 
             SourceSwitch {
+                visible: root.inspectMode
                 sourceKind: app.liveSourceKind
-                implicitWidth: 200
+                implicitWidth: 188
                 enabled: !app.busy && !app.liveRunning
                 opacity: enabled ? 1 : 0.5
                 onPicked: (k) => app.liveSourceKind = k
             }
 
             EngineSwitch {
+                visible: !root.inspectMode
                 engineKind: app.engineKind
                 implicitWidth: 200
                 enabled: !app.busy && !app.liveRunning
@@ -65,47 +72,12 @@ Rectangle {
                 onPicked: (k) => app.engineKind = k
             }
 
-            Rectangle {
-                visible: app.currentCategory.length > 0
-                implicitHeight: 26
-                implicitWidth: catText.width + 16
-                radius: 13
-                color: Theme.bgElevated
-                border.color: Theme.border
-                Text {
-                    id: catText
-                    anchors.centerIn: parent
-                    text: app.currentCategoryLabel
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.smallSize
-                    font.family: Theme.fontFamily
-                }
-            }
-
-            Row {
-                spacing: 6
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "帧率"
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.smallSize
-                    font.family: Theme.fontFamily
-                }
-                AppSpinBox {
-                    from: 1
-                    to: 15
-                    value: app.liveTargetFps
-                    enabled: !app.liveRunning && !app.busy
-                    implicitWidth: 78
-                    onValueModified: app.liveTargetFps = value
-                }
-                AppButton {
-                    text: app.liveRunning ? "停止" : app.liveStartButtonText
-                    primary: !app.liveRunning
-                    highlight: app.liveRunning
-                    enabled: app.liveRunning || app.canStartLive
-                    onClicked: app.liveRunning ? app.stopLive() : app.requestStartLive()
-                }
+            AppButton {
+                text: app.liveRunning ? "停止" : app.liveStartButtonText
+                primary: !app.liveRunning
+                highlight: app.liveRunning
+                enabled: app.liveRunning || app.canStartLive
+                onClicked: app.liveRunning ? app.stopLive() : app.requestStartLive()
             }
 
             AppButton {

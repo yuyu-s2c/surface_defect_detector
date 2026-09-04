@@ -4,14 +4,11 @@ import QtQuick.Layouts
 
 // 开线前自检。通过后才 confirmStartLive；图源由顶栏 liveSourceKind 决定。
 
-Dialog {
+AppDialog {
     id: root
-    modal: true
     title: "开线自检"
     width: 520
-    anchors.centerIn: parent
-    palette.window: Theme.bgElevated
-    palette.windowText: Theme.textPrimary
+    standardButtons: Dialog.NoButton
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
     ColumnLayout {
