@@ -92,7 +92,7 @@ Rectangle {
                 Layout.fillWidth: true
                 implicitHeight: 34
                 engineKind: app.engineKind
-                enabled: !app.busy && !app.liveRunning
+                enabled: !app.busy && !app.liveRunning && auth.canChangeEngine
                 opacity: enabled ? 1 : 0.5
                 onPicked: (k) => app.engineKind = k
             }
@@ -120,12 +120,13 @@ Rectangle {
                     enabled: !app.busy
                     onEditingFinished: app.workOrder = text
                 }
-                AppTextField {
+                Text {
                     Layout.fillWidth: true
-                    text: app.operatorName
-                    placeholderText: "操作员"
-                    enabled: !app.busy
-                    onEditingFinished: app.operatorName = text
+                    text: "操作员  " + (app.operatorName.length > 0 ? app.operatorName : "（未登录）")
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.bodySize
+                    font.family: Theme.fontFamily
+                    elide: Text.ElideRight
                 }
                 RowLayout {
                     Layout.fillWidth: true
@@ -141,7 +142,7 @@ Rectangle {
                         from: 1
                         to: 15
                         value: app.liveTargetFps
-                        enabled: !app.busy
+                        enabled: !app.busy && auth.canEditProcess
                         onValueModified: app.liveTargetFps = value
                     }
                     Text {
@@ -155,7 +156,7 @@ Rectangle {
                         from: 0
                         to: 200
                         value: app.consecutiveNgLimit
-                        enabled: !app.busy
+                        enabled: !app.busy && auth.canEditProcess
                         onValueModified: app.consecutiveNgLimit = value
                     }
                 }

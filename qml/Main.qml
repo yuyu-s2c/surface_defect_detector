@@ -2,21 +2,30 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
-import SurfaceDefect
 
 ApplicationWindow {
     id: win
+    objectName: "mainWindow"
     // 几何由 main.cpp placeMainWindow 按可用桌面（含标题栏）夹紧并居中；
     // 这里只给最小可操作尺寸，避免 1400×900 在笔记本缩放下顶出屏幕。
     width: 1280
     height: 720
     minimumWidth: 960
     minimumHeight: 560
-    visible: false
+    visible: auth.loggedIn
     title: "表面缺陷检测工作站"
     color: Theme.bgApp
     font.family: Theme.fontFamily
     font.pixelSize: Theme.bodySize
+
+    onClosing: Qt.quit()
+
+    onVisibleChanged: {
+        if (visible) {
+            raise()
+            requestActivate()
+        }
+    }
 
     function isTyping() {
         const item = win.activeFocusItem
@@ -30,6 +39,9 @@ ApplicationWindow {
         onExportLiveClicked: liveFolderDialog.open()
         onDatasetClicked: datasetDialog.open()
         onAboutClicked: aboutDialog.open()
+        onPasswordClicked: passwordDialog.open()
+        onUsersClicked: usersDialog.open()
+        onLogoutClicked: auth.logout()
     }
 
     footer: AppStatusBar {
@@ -176,6 +188,14 @@ ApplicationWindow {
         id: selfCheckDialog
     }
 
+    ChangePasswordDialog {
+        id: passwordDialog
+    }
+
+    UserManageDialog {
+        id: usersDialog
+    }
+
     Connections {
         target: app
         function onErrorMessageChanged() {
@@ -187,24 +207,34 @@ ApplicationWindow {
         }
     }
 
-    Shortcut { sequence: "Space"; enabled: !win.isTyping(); onActivated: app.requestStartLive() }
-    Shortcut { sequence: "Esc"; onActivated: app.stopLive() }
-    Shortcut { sequence: "B"; enabled: !win.isTyping(); onActivated: app.runBatch() }
-    Shortcut { sequence: "Shift+C"; enabled: !win.isTyping(); onActivated: app.compareEngines() }
-    Shortcut { sequence: "I"; enabled: !win.isTyping() && !app.liveRunning && !app.busy; onActivated: app.workMode = 0 }
-    Shortcut { sequence: "A"; enabled: !win.isTyping() && !app.liveRunning && !app.busy; onActivated: app.workMode = 1 }
-    Shortcut { sequence: "1"; enabled: !win.isTyping() && !app.liveRunning && !app.busy; onActivated: app.engineKind = 0 }
-    Shortcut { sequence: "2"; enabled: !win.isTyping() && !app.liveRunning && !app.busy; onActivated: app.engineKind = 1 }
-    Shortcut { sequence: "G"; enabled: !win.isTyping(); onActivated: app.gtOverlayVisible = !app.gtOverlayVisible }
-    Shortcut { sequence: "D"; enabled: !win.isTyping(); onActivated: app.detOverlayVisible = !app.detOverlayVisible }
-    Shortcut { sequence: "F"; enabled: !win.isTyping(); onActivated: viewer.fitCanvas() }
-    Shortcut { sequence: "Ctrl+O"; onActivated: datasetDialog.open() }
-    Shortcut { sequence: "Ctrl+E"; onActivated: { if (app.hasImage && !app.liveRunning && !app.busy) saveDialog.open() } }
-    Shortcut { sequence: "Ctrl+Shift+E"; onActivated: { if (app.canExportBatch && !app.liveRunning && !app.busy) folderDialog.open() } }
-    Shortcut { sequence: "F1"; onActivated: aboutDialog.open() }
-
-    Component.onCompleted: {
-        if (!app.hasDataset)
-            datasetDialog.open()
+    Connections {
+        target: auth
+        function onSessionChanged() {
+            app.onAuthChanged(auth.loggedIn)
+            if (auth.loggedIn) {
+                app.operatorName = auth.displayName
+                if (!app.hasDataset)
+                    datasetDialog.open()
+            } else {
+                passwordDialog.close()
+                usersDialog.close()
+            }
+        }
     }
+
+    Shortcut { sequence: "Space"; enabled: auth.loggedIn && !win.isTyping(); onActivated: app.requestStartLive() }
+    Shortcut { sequence: "Esc"; enabled: auth.loggedIn; onActivated: app.stopLive() }
+    Shortcut { sequence: "B"; enabled: auth.loggedIn && auth.canAnalyze && !win.isTyping(); onActivated: app.runBatch() }
+    Shortcut { sequence: "Shift+C"; enabled: auth.loggedIn && auth.canAnalyze && !win.isTyping(); onActivated: app.compareEngines() }
+    Shortcut { sequence: "I"; enabled: auth.loggedIn && !win.isTyping() && !app.liveRunning && !app.busy; onActivated: app.workMode = 0 }
+    Shortcut { sequence: "A"; enabled: auth.loggedIn && auth.canAnalyze && !win.isTyping() && !app.liveRunning && !app.busy; onActivated: app.workMode = 1 }
+    Shortcut { sequence: "1"; enabled: auth.loggedIn && auth.canChangeEngine && !win.isTyping() && !app.liveRunning && !app.busy; onActivated: app.engineKind = 0 }
+    Shortcut { sequence: "2"; enabled: auth.loggedIn && auth.canChangeEngine && !win.isTyping() && !app.liveRunning && !app.busy; onActivated: app.engineKind = 1 }
+    Shortcut { sequence: "G"; enabled: auth.loggedIn && !win.isTyping(); onActivated: app.gtOverlayVisible = !app.gtOverlayVisible }
+    Shortcut { sequence: "D"; enabled: auth.loggedIn && !win.isTyping(); onActivated: app.detOverlayVisible = !app.detOverlayVisible }
+    Shortcut { sequence: "F"; enabled: auth.loggedIn && !win.isTyping(); onActivated: viewer.fitCanvas() }
+    Shortcut { sequence: "Ctrl+O"; enabled: auth.loggedIn && auth.canChangeDataset; onActivated: datasetDialog.open() }
+    Shortcut { sequence: "Ctrl+E"; enabled: auth.loggedIn; onActivated: { if (app.hasImage && !app.liveRunning && !app.busy) saveDialog.open() } }
+    Shortcut { sequence: "Ctrl+Shift+E"; enabled: auth.loggedIn && auth.canAnalyze; onActivated: { if (app.canExportBatch && !app.liveRunning && !app.busy) folderDialog.open() } }
+    Shortcut { sequence: "F1"; enabled: auth.loggedIn; onActivated: aboutDialog.open() }
 }

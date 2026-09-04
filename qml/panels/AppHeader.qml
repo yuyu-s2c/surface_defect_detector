@@ -12,6 +12,9 @@ Rectangle {
     signal exportLiveClicked()
     signal datasetClicked()
     signal aboutClicked()
+    signal passwordClicked()
+    signal usersClicked()
+    signal logoutClicked()
 
     readonly property bool inspectMode: app.workMode === 0
 
@@ -47,6 +50,7 @@ Rectangle {
 
             ModeSwitch {
                 workMode: app.workMode
+                analyzeEnabled: auth.canAnalyze
                 enabled: !app.liveRunning && !app.busy
                 opacity: enabled ? 1 : 0.5
                 onPicked: (m) => app.workMode = m
@@ -67,7 +71,7 @@ Rectangle {
                 visible: !root.inspectMode
                 engineKind: app.engineKind
                 implicitWidth: 200
-                enabled: !app.busy && !app.liveRunning
+                enabled: !app.busy && !app.liveRunning && auth.canChangeEngine
                 opacity: enabled ? 1 : 0.5
                 onPicked: (k) => app.engineKind = k
             }
@@ -190,7 +194,7 @@ Rectangle {
 
             MenuRow {
                 label: "打开数据集"
-                rowEnabled: !app.busy && !app.liveRunning
+                rowEnabled: !app.busy && !app.liveRunning && auth.canChangeDataset
                 onActivated: root.datasetClicked()
             }
             MenuRule {}
@@ -203,13 +207,29 @@ Rectangle {
             MenuRow {
                 label: "导出批量结果"
                 hint: "PNG + CSV"
-                rowEnabled: app.canExportBatch && !app.liveRunning && !app.busy
+                rowEnabled: app.canExportBatch && !app.liveRunning && !app.busy && auth.canAnalyze
                 onActivated: root.exportBatchClicked()
             }
             MenuRow {
                 label: "导出本班记录"
                 rowEnabled: app.canExportLive
                 onActivated: root.exportLiveClicked()
+            }
+            MenuRule {}
+            MenuRow {
+                label: "修改口令"
+                rowEnabled: auth.loggedIn
+                onActivated: root.passwordClicked()
+            }
+            MenuRow {
+                label: "用户管理"
+                rowEnabled: auth.canManageUsers && !app.liveRunning && !app.busy
+                onActivated: root.usersClicked()
+            }
+            MenuRow {
+                label: "退出登录"
+                rowEnabled: auth.loggedIn && !app.busy
+                onActivated: root.logoutClicked()
             }
             MenuRule {}
             MenuRow {

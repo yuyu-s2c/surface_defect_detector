@@ -62,6 +62,14 @@ Rectangle {
         Item { Layout.fillWidth: true }
 
         Text {
+            visible: auth.loggedIn
+            text: auth.displayName + "  ·  " + auth.roleLabel
+            color: Theme.textPrimary
+            font.pixelSize: Theme.smallSize
+            font.family: Theme.fontFamily
+        }
+
+        Text {
             visible: app.liveInterlocked
             text: "联锁停线"
             color: Theme.danger

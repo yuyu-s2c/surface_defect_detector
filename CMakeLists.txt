@@ -66,6 +66,9 @@ set(PROJECT_SOURCES
     src/sources/WebcamPreview.cpp
     src/sources/CameraSource.h
     src/sources/CameraSource.cpp
+    src/auth/UserTypes.h
+    src/auth/UserStore.h
+    src/auth/UserStore.cpp
 )
 
 qt_add_executable(surface_defect_detector ${PROJECT_SOURCES})
@@ -77,6 +80,7 @@ qt_add_qml_module(surface_defect_detector
     VERSION 1.0
     QML_FILES
         qml/Main.qml
+        qml/LoginWindow.qml
         qml/Theme.qml
         qml/panels/AppHeader.qml
         qml/panels/DatasetPanel.qml
@@ -108,9 +112,15 @@ qt_add_qml_module(surface_defect_detector
         qml/components/SelfCheckDialog.qml
         qml/components/AppDialog.qml
         qml/components/AppTextField.qml
+        qml/components/ChangePasswordDialog.qml
+        qml/components/UserManageDialog.qml
     SOURCES
         src/viewmodels/MainViewModel.h
         src/viewmodels/MainViewModel.cpp
+        src/viewmodels/AuthViewModel.h
+        src/viewmodels/AuthViewModel.cpp
+        src/viewmodels/UserListModel.h
+        src/viewmodels/UserListModel.cpp
         src/viewmodels/DatasetTreeModel.h
         src/viewmodels/DatasetTreeModel.cpp
         src/viewmodels/BoxListModel.h

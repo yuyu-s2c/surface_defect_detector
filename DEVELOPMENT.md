@@ -63,7 +63,8 @@ surface_defect_detector/
 ├── qml/                      # View：检测/分析两态（顶栏 / 左树 / 中画布 / 右结果轨或分析侧栏）
 ├── src/
 │   ├── main.cpp                # --batch / --live-smoke / --webcam-smoke → QCoreApplication；GUI → QGuiApplication
-│   ├── viewmodels/             # MainViewModel + 树/框/指标/对比/NG/模拟 DO 列表
+│   ├── viewmodels/             # MainViewModel + AuthViewModel + 树/框/指标/对比/NG/模拟 DO / 用户表
+│   ├── auth/                   # 本机账号 UserStore（AppData/users.json，SHA-256+盐）
 │   ├── items/InspectionCanvas  # QQuickPaintedItem：缩放平移，GT/检测叠加
 │   ├── DetectionController.h/.cpp # 数据集 + 引擎缓存 + 批量编排（GUI/CLI 共用）
 │   ├── InspectionSession.h/.cpp   # 有界队列 + 取流/检测双线程 + 班次摘要
@@ -86,9 +87,10 @@ surface_defect_detector/
 └── build/
 ```
 
-分层：`QML View → MainViewModel → DetectionController / InspectionSession → IDetectionEngine`。
+分层：`QML View → MainViewModel / AuthViewModel → DetectionController / InspectionSession / UserStore → IDetectionEngine`。
 QML 不接触 `cv::Mat` 与引擎实例。GUI 耗时路径走 Controller 工作线程；`--batch` 仍同步。
 取流走 `InspectionSession`（同步 `detect()`）。NG 走 `IRejectSink`（日志 + `_sessions/` + 模拟 DO）。
+GUI 启动先本机登录（操作员锁检测态；工艺员可分析；管理员管账号）。CLI 不登录、不读账号文件。
 
 检测态顶栏：模式 / 图源 / 开线。结果轨：开线前配方、开线中本班、停线后摘要。
 分析态顶栏切引擎，右侧参数 / 指标 / 对比。帧率在结果轨配方。对话框走 `AppDialog`。
@@ -102,7 +104,7 @@ QML 不接触 `cv::Mat` 与引擎实例。GUI 耗时路径走 Controller 工作�
 
 ## 4. 当前状态与口径
 
-**已完成** P1～P3.7、离线工位闭环、P4.0 本机摄像头、工位可读性。
+**已完成** P1～P3.8、离线工位闭环、P4.0 本机摄像头、工位可读性。
 **冻结** 算法、P2 工作点、`--batch` 口径。不要再训 EfficientAD-S、不要重做 GUI、
 不要用传统 CV 给摄像头刷检出率（分布外）、不要假海康/假 PLC、不要给 screw 做传统配准。
 **下一步** 只有完整 Phase 4：实机到货后填 `CameraSource` + 真实 DO 的 `IRejectSink`。
@@ -195,6 +197,7 @@ NG 90 = 分数过线（88 TP + 2 good FP，与 108/115 一致）。Webcam 分布
 | P3.5 | Widgets 删除，Qt Quick |
 | P3.6 | DirectML、分数过线、新类零改代码接入、Folder 模拟取流 |
 | P3.7 | 班次落盘、检测/分析两态、丢最旧帧、迟剔除 |
+| P3.8 | 本机登录 + 三角色用户管理（操作员/工艺员/管理员） |
 | 工位闭环 | 开线自检、模拟 DO 点表、直通率/节拍、连续 NG 联锁 |
 | P4.0 | `WebcamSource` + `WebcamPreview`（切源预览，开线才检测） |
 | 可读性 | 检测态顶栏收口、结果轨按班次状态切、摄像头分布外横幅、`AppDialog` |

@@ -3,6 +3,7 @@ import QtQuick
 Rectangle {
     id: root
     property int workMode: 0
+    property bool analyzeEnabled: true
     signal picked(int mode)
 
     implicitWidth: 132
@@ -24,9 +25,11 @@ Rectangle {
             ]
             delegate: Rectangle {
                 required property var modelData
+                readonly property bool locked: modelData.mode === 1 && !root.analyzeEnabled
                 width: (root.width - 8) / 2
                 height: root.height - 6
                 radius: Theme.radiusSmall
+                opacity: locked ? 0.45 : 1
                 color: root.workMode === modelData.mode ? Theme.accent : "transparent"
 
                 Text {
@@ -41,7 +44,8 @@ Rectangle {
                 MouseArea {
                     anchors.fill: parent
                     hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
+                    enabled: !locked
+                    cursorShape: locked ? Qt.ForbiddenCursor : Qt.PointingHandCursor
                     onClicked: {
                         if (root.workMode !== modelData.mode)
                             root.picked(modelData.mode)

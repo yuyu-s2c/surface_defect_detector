@@ -8,11 +8,12 @@
 + EfficientAD ONNX（Phase 2，已收住）。数据集 MVTec AD（metal_nut、screw，
 `train/` 只有良品）。训练见 tools/training/TRAINING_NOTES.md。
 
-已完成到 P4.0 本机摄像头 + 工位可读性。海康 `CameraSource` 仍空壳。完整 Phase 4
+已完成到 P3.8 本机登录 + P4.0 本机摄像头 + 工位可读性。海康 `CameraSource` 仍空壳。完整 Phase 4
 （海康/PLC）等实机，只换 `CameraSource` 并加一个真实 DO 的 `IRejectSink`。
 切到 Webcam 即 `WebcamPreview` 无检测预览，开线才进 `InspectionSession`。
 
-检测态顶栏只留模式 / 图源 / 开线；帧率在结果轨配方；引擎在检测态结果轨或分析态顶栏。
+GUI 启动先登录。操作员锁检测态；工艺员可进分析台；管理员另管本机账号（`AppData/users.json`）。
+`--batch` / `--live-smoke` / `--webcam-smoke` 不登录。检测态顶栏只留模式 / 图源 / 开线；帧率在结果轨配方；引擎在检测态结果轨或分析态顶栏。
 不要把引擎或帧率塞回检测态顶栏，不要重做 GUI，不要用传统 CV 给摄像头刷检出率（分布外）。
 
 ## 构建与运行
@@ -60,7 +61,7 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
   应使用 `TreeView` + `TreeViewDelegate`，选中走 `selectionModel`，不要覆盖
   `leftPadding`（模板按 depth 和指示器宽度给 contentItem 让位）。
 - **分层**：QML View（qml/）只绑属性/命令；MainViewModel 是 GUI 状态层（选图、参数、
-  QImage 叠加、QSettings）；DetectionController 是应用服务层（数据集 + 引擎缓存 +
+  QImage 叠加、QSettings）；AuthViewModel 是本机登录态（角色门）；DetectionController 是应用服务层（数据集 + 引擎缓存 +
   批量编排，GUI 与 --batch 共用）。取流是 `InspectionSession`（`IFrameSource` +
   有界队列），同步 `detect()`，不走 `*Async`。图源：`FolderSource`（默认 / `--live-smoke`）
   或 `WebcamSource`（顶栏 / `--webcam-smoke`）；切到 Webcam 先走 `WebcamPreview` 预览，
@@ -68,9 +69,10 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
   检测态顶栏不要再挂引擎/帧率（帧率在结果轨配方；引擎在结果轨或分析态顶栏）。
   NG 走 `IRejectSink`（日志 + `_sessions/` + 模拟 DO 点表）。
   不要把 Controller / cv::Mat / Session 暴露给 QML。GUI 分检测/分析两态，耗时路径走
-  Controller 工作线程 + 画布蒙层/底栏进度；`--batch` 仍同步，不读 QSettings。
+  Controller 工作线程 + 画布蒙层/底栏进度；`--batch` 仍同步，不读 QSettings、不登录。
   左栏数据集树用官方 `TreeViewDelegate`，点叶子节点经 `selectFromModelIndex` 加载。
-  取流中不要选图 / 切引擎 / 切图源 / 跑批量。
+  取流中不要选图 / 切引擎 / 切图源 / 跑批量。操作员不能进分析台、改引擎/参数/数据集根。
+  不要接域控或云账号；口令只落本机 `users.json`（SHA-256+盐）。
 - **不要动数据集**：metal_nut/、screw/ 只读（顶层 train/、test/、ground_truth/）。
   曾因解压套一层出现 metal_nut/metal_nut、screw/screw，已删除；若再出现则忽略。
 - **新类别**：按 MVTec 布局放入根下即可被树扫到；ONNX 放

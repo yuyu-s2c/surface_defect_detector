@@ -31,7 +31,7 @@ Rectangle {
             AppButton {
                 text: "打开…"
                 outlined: true
-                enabled: !app.busy && !app.liveRunning
+                enabled: !app.busy && !app.liveRunning && auth.canChangeDataset
                 onClicked: root.openDatasetRequested()
             }
         }

@@ -299,6 +299,7 @@ public:
     Q_INVOKABLE QUrl suggestedLiveExportFolderUrl() const;
     Q_INVOKABLE QUrl datasetRootUrl() const;
     Q_INVOKABLE void clearToast();
+    Q_INVOKABLE void onAuthChanged(bool loggedIn);
 
 signals:
     void hasDatasetChanged();

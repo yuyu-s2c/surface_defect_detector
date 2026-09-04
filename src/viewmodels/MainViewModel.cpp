@@ -18,7 +18,6 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSettings>
-#include <QTimer>
 #include <QVariantMap>
 #include <QtMath>
 
@@ -64,13 +63,7 @@ MainViewModel::MainViewModel(QObject* parent)
     connect(&m_preview, &WebcamPreview::errorOccurred,
             this, &MainViewModel::onPreviewError, Qt::QueuedConnection);
 
-    // 等事件循环起来再开预览，避免构造阶段堵住窗口。
-    if (usingWebcam()) {
-        QTimer::singleShot(0, this, [this]() {
-            if (usingWebcam() && !m_liveRunning && !m_liveStarting)
-                startPreview();
-        });
-    }
+    // 摄像头预览等登录后再开（onAuthChanged），避免登录层底下占设备。
 }
 
 MainViewModel::~MainViewModel()
@@ -105,7 +98,9 @@ QString MainViewModel::scoreRuleText() const
 QString MainViewModel::aboutBody() const
 {
     return QStringLiteral(
-        "离线质检工作站：文件夹图源、模拟取流、班次剔除落盘、模拟 PLC/DO 点表、批量评估、PNG/CSV 导出、传统 CV 与 EfficientAD 双引擎。\n\n"
+        "离线质检工作站：本机登录、文件夹图源、模拟取流、班次剔除落盘、模拟 PLC/DO 点表、批量评估、PNG/CSV 导出、传统 CV 与 EfficientAD 双引擎。\n\n"
+        "账号三角色：操作员只跑检测台；工艺员可进分析台改参数/引擎；管理员另管本机账号。"
+        "口令存在本机 AppData/users.json，不联网。命令行 --batch / --live-smoke / --webcam-smoke 不登录。\n\n"
         "深度学习用本地 ONNX（默认 DirectML，失败回 CPU），不会联网、不会训练。"
         "权重约定：models/<类别>/weights/onnx/<类别>.onnx。"
         "首次对该执行器标定会扫描 train/good 并写入同目录 .calib.json（v3，按 EP 分键），之后复用缓存。\n\n"
@@ -121,8 +116,8 @@ QString MainViewModel::shortcutsHelp() const
     return QStringLiteral(
         "空格 开自检/停止取流    Esc 停止取流    B 批量    Shift+C 对比引擎\n"
         "1 传统 CV    2 EfficientAD    G 真值叠加    D 检测叠加    F 适应画面\n"
-        "I 检测台    A 分析台    Ctrl+O 打开数据集    Ctrl+E 导出当前图\n"
-        "Ctrl+Shift+E 导出批量    F1 关于");
+        "I 检测台    A 分析台（工艺员/管理员）    Ctrl+O 打开数据集\n"
+        "Ctrl+E 导出当前图    Ctrl+Shift+E 导出批量    F1 关于");
 }
 
 TraditionalParams MainViewModel::clampCv(const TraditionalParams& p)
@@ -406,6 +401,26 @@ void MainViewModel::setOperatorName(const QString& v)
     m_operatorName = t;
     saveStationSettings();
     emit recipeChanged();
+}
+
+void MainViewModel::onAuthChanged(bool loggedIn)
+{
+    if (loggedIn) {
+        if (usingWebcam() && !m_liveRunning && !m_liveStarting)
+            startPreview();
+        return;
+    }
+    // 不要走 stopLive()：它在 Webcam 下会立刻再 startPreview。
+    m_liveStarting = false;
+    if (m_liveRunning || m_session.isRunning()) {
+        m_session.stop();
+        applyLiveSummary(m_session.lastSummary());
+        setLiveRunning(false);
+        emit workEnabledChanged();
+    }
+    stopPreview();
+    if (m_workMode != 0)
+        setWorkMode(0);
 }
 
 void MainViewModel::setConsecutiveNgLimit(int n)

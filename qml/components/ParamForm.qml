@@ -4,7 +4,7 @@ import QtQuick.Controls
 
 ColumnLayout {
     spacing: 10
-    enabled: !app.liveRunning && !app.busy
+    enabled: !app.liveRunning && !app.busy && auth.canEditParams
     opacity: enabled ? 1 : 0.55
 
     component ParamRow: RowLayout {

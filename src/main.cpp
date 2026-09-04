@@ -1,3 +1,4 @@
+#include "AuthViewModel.h"
 #include "DetectionController.h"
 #include "InspectionSession.h"
 #include "MainViewModel.h"
@@ -19,6 +20,7 @@
 #include <QMargins>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQmlError>
 #include <QQuickStyle>
 #include <QScreen>
 #include <QTextStream>
@@ -589,6 +591,53 @@ static void placeMainWindow(QWindow* win)
         avail.y() + (avail.height() - (innerH + extraH)) / 2));
 }
 
+static QWindow* findNamedWindow(QObject* root, const QString& name)
+{
+    if (!root)
+        return nullptr;
+    if (auto* self = qobject_cast<QWindow*>(root)) {
+        if (self->objectName() == name)
+            return self;
+    }
+    return root->findChild<QWindow*>(name);
+}
+
+static QWindow* findNamedWindowFallback(const QString& name)
+{
+    const auto windows = QGuiApplication::allWindows();
+    for (QWindow* w : windows) {
+        if (w && w->objectName() == name)
+            return w;
+    }
+    return nullptr;
+}
+
+static void placeLoginWindow(QWindow* win)
+{
+    if (!win)
+        return;
+    QScreen* screen = win->screen();
+    if (!screen)
+        screen = QGuiApplication::primaryScreen();
+    if (!screen)
+        return;
+
+    const QRect avail = screen->availableGeometry();
+    win->create();
+    const QMargins fm = win->frameMargins();
+    int extraW = qMax(0, fm.left() + fm.right());
+    int extraH = fm.top() + fm.bottom();
+    if (extraH <= 0)
+        extraH = 32;
+
+    const int innerW = 460;
+    const int innerH = 560;
+    win->resize(innerW, innerH);
+    win->setFramePosition(QPoint(
+        avail.x() + (avail.width() - (innerW + extraW)) / 2,
+        avail.y() + (avail.height() - (innerH + extraH)) / 2));
+}
+
 static int runGui(int argc, char* argv[])
 {
     QGuiApplication app(argc, argv);
@@ -599,25 +648,42 @@ static int runGui(int argc, char* argv[])
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
     auto* vm = new MainViewModel(&app);
+    auto* auth = new AuthViewModel(&app);
     const QString root = locateDatasetRoot();
     if (!root.isEmpty())
         vm->loadDatasetPath(root);
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty(QStringLiteral("app"), vm);
+    engine.rootContext()->setContextProperty(QStringLiteral("auth"), auth);
+    QObject::connect(&engine, &QQmlEngine::warnings,
+                     [](const QList<QQmlError>& list) {
+                         QTextStream err(stderr);
+                         for (const QQmlError& e : list)
+                             err << e.toString() << '\n';
+                     });
     QObject::connect(
         &engine, &QQmlApplicationEngine::objectCreationFailed,
         &app, []() { QCoreApplication::exit(1); },
         Qt::QueuedConnection);
-    engine.loadFromModule("SurfaceDefect", "Main");
+    engine.loadFromModule("SurfaceDefect", "LoginWindow");
     if (engine.rootObjects().isEmpty()) {
-        QTextStream(stderr) << "ERROR: QML 加载失败（SurfaceDefect/Main）\n";
+        QTextStream(stderr) << "ERROR: QML 加载失败（SurfaceDefect/LoginWindow）\n";
         return 1;
     }
-    if (auto* win = qobject_cast<QWindow*>(engine.rootObjects().constFirst())) {
-        placeMainWindow(win);
-        win->show();
+    auto* loginWin = qobject_cast<QWindow*>(engine.rootObjects().constFirst());
+    if (!loginWin) {
+        QTextStream(stderr) << "ERROR: 登录窗根对象不是 Window\n";
+        return 1;
     }
+    placeLoginWindow(loginWin);
+    QWindow* mainWin = findNamedWindow(loginWin, QStringLiteral("mainWindow"));
+    if (!mainWin)
+        mainWin = findNamedWindowFallback(QStringLiteral("mainWindow"));
+    if (mainWin)
+        placeMainWindow(mainWin);
+    loginWin->show();
+    loginWin->requestActivate();
     return QGuiApplication::exec();
 }
 

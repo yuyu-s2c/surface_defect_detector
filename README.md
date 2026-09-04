@@ -7,7 +7,7 @@
 - AI 代理约定：[AGENTS.md](AGENTS.md)
 - 训练：[tools/training/TRAIN.md](tools/training/TRAIN.md)
 
-P1～P3.7、离线工位闭环、P4.0 本机摄像头、工位可读性已完成。完整 Phase 4（海康 + 真实 DO）等实机：只换 `CameraSource`，再加一个真实 DO 的 `IRejectSink`。不要把 `CameraSource` 当假直播。
+P1～P3.8、离线工位闭环、P4.0 本机摄像头、工位可读性已完成。完整 Phase 4（海康 + 真实 DO）等实机：只换 `CameraSource`，再加一个真实 DO 的 `IRejectSink`。不要把 `CameraSource` 当假直播。
 
 识别数字以 `--batch` / `--live-smoke` 为准。本机摄像头相对 `metal_nut` / `screw` 是分布外，整班 NG 是预期。
 
@@ -15,11 +15,11 @@ P1～P3.7、离线工位闭环、P4.0 本机摄像头、工位可读性已完成
 
 Windows 本机已构建，数据集在仓库根（含 `metal_nut/`）。`models/metal_nut/.../metal_nut.onnx` 可选，没有就用传统 CV。
 
-1. 启动 `./build/surface_defect_detector.exe`，打开数据集根。
-2. 顶栏保持 **检测**，左侧点 `metal_nut`。引擎在右侧配方上方切 **传统 CV / EfficientAD**（分析态改在顶栏切）。
+1. 启动 `./build/surface_defect_detector.exe`，本机登录（首次：`admin` / `engineer` / `operator`，口令与账号相同）。操作员只跑检测台；改参数请用工艺员或管理员。
+2. 打开数据集根。顶栏保持 **检测**，左侧点 `metal_nut`。引擎在右侧配方上方切 **传统 CV / EfficientAD**（分析态改在顶栏切；操作员不能切）。
 3. 身份条应为 **相机离线 / 模拟取流 · FolderSource / 模拟 PLC · DO0.0**，不要出现「相机已连接」。
    顶栏可切 **文件夹 / 本机摄像头**（默认文件夹）。切到摄像头后画布立即预览（无检测），身份条改为 **本机摄像头 · OpenCV / 预览中 · WebcamSource**，并出现分布外横幅。开线才检测。
-4. 右侧填工单（默认同日 `WO-YYYYMMDD`）、连续 NG（默认 8）、帧率（1–15，同一配方区）。
+4. 右侧工单默认同日 `WO-YYYYMMDD`；操作员名取登录显示名，不能手填。连续 NG（默认 8）、帧率（1–15）在同一配方区（工艺员/管理员可改）。
 5. 点 **模拟开线**（或空格）→ 开线自检 → **确认开线**。不会启动 `CameraSource`。
    摄像头模式下按钮为 **开线**；预览已出帧则不再探活，否则自检会短开短关。
 6. 结果轨看合格/不合格、直通率、节拍、连续 NG。约 8 张连续不合格后 **联锁停线**。
