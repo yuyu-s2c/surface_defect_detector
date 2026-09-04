@@ -1,8 +1,8 @@
 #include "sources/WebcamSource.h"
+#include "log/AppLog.h"
 
 #include <opencv2/imgproc.hpp>
 
-#include <QDebug>
 #include <QtGlobal>
 
 namespace {
@@ -106,7 +106,7 @@ bool WebcamSource::start()
     if (!openCapture(m_cap, m_index, &err)) {
         // 不在这里 emit：InspectionSession::start 已连接 errorOccurred，
         // 再发一次会和 ViewModel 的「启动失败」叠两条。调用方看返回值即可。
-        qWarning() << err;
+        qCWarning(lcSource) << err;
         return false;
     }
     QMutexLocker lock(&m_mutex);
@@ -178,7 +178,7 @@ bool WebcamSource::grab(CapturedFrame& out)
                 m_running.store(false);
                 return false;
             }
-            qWarning() << "WebcamSource 读帧失败，设备" << m_index;
+            qCWarning(lcSource) << "WebcamSource 读帧失败，设备" << m_index;
             emit errorOccurred(QStringLiteral("本机摄像头读帧失败（设备 %1）。").arg(m_index));
             m_running.store(false);
             return false;

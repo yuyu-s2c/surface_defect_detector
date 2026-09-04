@@ -12,6 +12,7 @@
 #include "sources/LogRejectSink.h"
 #include "sources/SimulatedDoSink.h"
 #include "sources/WebcamSource.h"
+#include "log/AppLog.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -442,6 +443,7 @@ void MainViewModel::setLiveSourceKind(int kind)
         return;
     m_liveSourceKind = k;
     saveStationSettings();
+    qCInfo(lcGui) << "图源" << (k == 1 ? "webcam" : "folder");
     emit liveSourceKindChanged();
     emit workEnabledChanged();
     emit stationStatusChanged();
@@ -642,6 +644,7 @@ void MainViewModel::setStatusText(const QString& text)
 
 void MainViewModel::raiseError(const QString& msg)
 {
+    qCWarning(lcGui) << msg;
     m_errorMessage = msg;
     emit errorMessageChanged();
 }
@@ -661,6 +664,7 @@ bool MainViewModel::loadDatasetPath(const QString& path)
     m_datasetModel->rebuild(m_ctrl.dataset());
     m_datasetRoot = m_ctrl.dataset().rootPath();
     m_hasDataset = true;
+    qCInfo(lcGui) << "数据集" << m_datasetRoot;
     m_currentCategory.clear();
     m_currentDefectType.clear();
     m_currentImagePath.clear();
@@ -840,6 +844,7 @@ void MainViewModel::setEngineKind(int kind)
     m_engineKind = kind;
     m_ctrl.setEngineKind(currentKind());
     m_missingModelDialogShown = false;
+    qCInfo(lcGui) << "引擎" << currentEngineName();
     emit engineKindChanged();
     syncParamsFromSettings();
     refreshStationStatus();
@@ -1226,6 +1231,7 @@ void MainViewModel::onPreviewError(const QString& msg)
     setPreviewRunning(false);
     setStatusTone(QStringLiteral("warn"));
     setStatusText(msg);
+    qCWarning(lcGui) << "摄像头预览" << msg;
     showToast(msg);
 }
 
@@ -1252,6 +1258,10 @@ void MainViewModel::startLive()
     beginLiveSession(m_currentCategory);
     m_liveStarting = true;
     emit workEnabledChanged();
+    qCInfo(lcGui) << "开线" << m_currentCategory
+                  << (usingWebcam() ? "webcam" : "folder")
+                  << currentEngineName()
+                  << "fps=" << m_liveTargetFps;
     m_ctrl.prepareEngineAsync(m_currentCategory);
 }
 
@@ -1288,6 +1298,8 @@ void MainViewModel::stopLive()
     setLiveRunning(false);
     emit workEnabledChanged();
     if (was) {
+        qCInfo(lcGui) << "停线" << m_currentCategory
+                      << (usingWebcam() ? "webcam" : "folder");
         setStatusTone(QStringLiteral("normal"));
         setStatusText(usingWebcam() ? QStringLiteral("已停止取流")
                                     : QStringLiteral("已停止模拟取流"));
@@ -1489,6 +1501,8 @@ void MainViewModel::onLiveFinished(int total, int ngCount)
                        : QStringLiteral("模拟取流结束：不合格 %1 / %2"))
                       .arg(ngCount).arg(total));
     }
+    qCInfo(lcGui) << "班次结束" << total << "张 NG" << ngCount
+                  << (s.stopReason.isEmpty() ? QString() : s.stopReason);
     refreshStationStatus();
 }
 

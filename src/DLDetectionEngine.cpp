@@ -13,7 +13,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QtDebug>
+#include "log/AppLog.h"
 
 #include <windows.h>
 #include <dxgi.h>
@@ -49,7 +49,7 @@ DmlAdapter pickDmlAdapter()
     IDXGIFactory1* factory = nullptr;
     if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory)))
         || !factory) {
-        qWarning() << "DXGI 工厂创建失败，DirectML 用 device_id=0";
+        qCWarning(lcEngine) << "DXGI 工厂创建失败，DirectML 用 device_id=0";
         return best;
     }
     IDXGIAdapter1* adapter = nullptr;
@@ -71,9 +71,9 @@ DmlAdapter pickDmlAdapter()
     }
     factory->Release();
     if (best.name.isEmpty())
-        qWarning() << "未找到独立 GPU 适配器，DirectML 用 device_id=0";
+        qCWarning(lcEngine) << "未找到独立 GPU 适配器，DirectML 用 device_id=0";
     else
-        qInfo() << "DirectML 适配器:" << best.name
+        qCInfo(lcEngine) << "DirectML 适配器:" << best.name
                 << "device_id=" << best.deviceId
                 << "VRAM_MB=" << (best.vramBytes / (1024 * 1024));
     return best;
@@ -121,7 +121,7 @@ bool tryLoadCalibCache(const QString& path, qint64 modelSize, qint64 modelMtimeM
     QJsonParseError err;
     const QJsonDocument doc = QJsonDocument::fromJson(f.readAll(), &err);
     if (err.error != QJsonParseError::NoError || !doc.isObject()) {
-        qWarning() << "DL 标定缓存损坏，忽略:" << path << err.errorString();
+        qCWarning(lcEngine) << "DL 标定缓存损坏，忽略:" << path << err.errorString();
         return false;
     }
     const QJsonObject obj = doc.object();
@@ -175,7 +175,7 @@ void saveCalibCache(const QString& path, qint64 modelSize, qint64 modelMtimeMs,
 
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        qWarning() << "DL 标定缓存写入失败:" << path << f.errorString();
+        qCWarning(lcEngine) << "DL 标定缓存写入失败:" << path << f.errorString();
         return;
     }
     f.write(QJsonDocument(obj).toJson(QJsonDocument::Indented));
@@ -209,12 +209,12 @@ bool DLDetectionEngine::buildReference(const QStringList& goodImagePaths)
     m_loadedCalibFromCache = false;
 
     if (!QFileInfo::exists(m_modelPath)) {
-        qWarning() << "DL 模型不存在:" << m_modelPath
-                   << "（先运行 tools/training/train_efficientad.py 训练导出）";
+        qCWarning(lcEngine) << "DL 模型不存在:" << m_modelPath
+                            << "（先运行 tools/training/train_efficientad.py 训练导出）";
         return false;
     }
     if (goodImagePaths.isEmpty()) {
-        qWarning() << "DL 引擎阈值标定需要良品图，收到空列表";
+        qCWarning(lcEngine) << "DL 引擎阈值标定需要良品图，收到空列表";
         return false;
     }
 
@@ -225,20 +225,20 @@ bool DLDetectionEngine::buildReference(const QStringList& goodImagePaths)
             try {
                 createSession(true);
             } catch (const Ort::Exception& e) {
-                qWarning() << "DirectML 会话失败:" << e.what();
+                qCWarning(lcEngine) << "DirectML 会话失败:" << e.what();
                 m_session.reset();
                 m_activeProvider.clear();
                 m_calibProviderKey.clear();
                 if (requireDml)
                     return false;
-                qWarning() << "回退 CPU ONNX";
+                qCWarning(lcEngine) << "回退 CPU ONNX";
                 createSession(false);
             }
         } else {
             createSession(false);
         }
     } catch (const Ort::Exception& e) {
-        qWarning() << "ONNX 会话创建失败:" << e.what();
+        qCWarning(lcEngine) << "ONNX 会话创建失败:" << e.what();
         m_session.reset();
         m_activeProvider.clear();
         m_calibProviderKey.clear();
@@ -253,7 +253,7 @@ bool DLDetectionEngine::buildReference(const QStringList& goodImagePaths)
     if (tryLoadCalibCache(cachePath, modelSize, modelMtimeMs, inputSize,
                           goodImagePaths.size(), goodFp, m_calibProviderKey,
                           m_calibMean, m_calibStd, m_imageScores)) {
-        qInfo() << "DL 阈值从缓存加载:" << cachePath
+        qCInfo(lcEngine) << "DL 阈值从缓存加载:" << cachePath
                 << "mean=" << m_calibMean << "std=" << m_calibStd
                 << "k=" << thresholdSigma
                 << "-> pixelThr=" << (m_calibMean + thresholdSigma * m_calibStd)
@@ -285,7 +285,7 @@ bool DLDetectionEngine::buildReference(const QStringList& goodImagePaths)
         m_imageScores.push_back(nativeMax);
     }
     if (maxes.rows < 3) {
-        qWarning() << "DL 阈值标定：有效良品图不足（" << maxes.rows << "张）";
+        qCWarning(lcEngine) << "DL 阈值标定：有效良品图不足（" << maxes.rows << "张）";
         m_session.reset();
         m_imageScores.clear();
         return false;
@@ -295,7 +295,7 @@ bool DLDetectionEngine::buildReference(const QStringList& goodImagePaths)
     m_calibMean = mean[0];
     m_calibStd = stddev[0];
     // 日志用当前 k / 分位算出阈值；detect() 再按当时参数现算，改 k 或分位无需重标定
-    qInfo() << "DL 阈值标定:" << m_modelPath
+    qCInfo(lcEngine) << "DL 阈值标定:" << m_modelPath
             << "良品热图最大值 mean=" << m_calibMean << "std=" << m_calibStd
             << "k=" << thresholdSigma
             << "-> pixelThr=" << (m_calibMean + thresholdSigma * m_calibStd)
@@ -338,7 +338,7 @@ void DLDetectionEngine::createSession(bool useDml)
     // Windows 下 ORTCHAR_T 为 wchar_t
     m_session = std::make_unique<Ort::Session>(
         ortEnv(), m_modelPath.toStdWString().c_str(), opts);
-    qInfo() << "ONNX 会话:" << m_activeProvider << m_modelPath;
+    qCInfo(lcEngine) << "ONNX 会话:" << m_activeProvider << m_modelPath;
 }
 
 double DLDetectionEngine::currentImageThreshold() const
@@ -417,10 +417,10 @@ cv::Mat DLDetectionEngine::anomalyMap(const cv::Mat& image, double* nativeMax) c
             cv::resize(heat, heat, image.size(), 0, 0, cv::INTER_LINEAR);
             return heat;
         }
-        qWarning() << "DL 推理：输出中没有 4D 异常热图";
+        qCWarning(lcEngine) << "DL 推理：输出中没有 4D 异常热图";
         return {};
     } catch (const Ort::Exception& e) {
-        qWarning() << "DL 推理失败:" << e.what();
+        qCWarning(lcEngine) << "DL 推理失败:" << e.what();
         return {};
     }
 }

@@ -1,4 +1,5 @@
 #include "AuthViewModel.h"
+#include "log/AppLog.h"
 
 AuthViewModel::AuthViewModel(QObject* parent)
     : QObject(parent)
@@ -24,14 +25,17 @@ bool AuthViewModel::login(const QString& username, const QString& password)
     }
     const UserRecord* u = m_store.find(name);
     if (!u || !m_store.verifyPassword(*u, password)) {
+        qCWarning(lcAuth) << "登录失败" << name << "口令错误或不存在";
         setError(QStringLiteral("账号或口令不正确"));
         return false;
     }
     if (!u->enabled) {
+        qCWarning(lcAuth) << "登录失败" << name << "账号已停用";
         setError(QStringLiteral("账号已停用"));
         return false;
     }
     applySession(*u);
+    qCInfo(lcAuth) << "登录" << u->username << userRoleKey(u->role);
     setError({});
     setMessage({});
     return true;
@@ -41,6 +45,7 @@ void AuthViewModel::logout()
 {
     if (!m_loggedIn)
         return;
+    qCInfo(lcAuth) << "登出" << m_username << userRoleKey(m_role);
     clearSession();
     setError({});
     setMessage({});
@@ -62,6 +67,7 @@ bool AuthViewModel::changeOwnPassword(const QString& oldPassword, const QString&
         setError(err);
         return false;
     }
+    qCInfo(lcAuth) << "口令已更新" << m_username;
     setError({});
     setMessage(QStringLiteral("口令已更新"));
     return true;
@@ -80,6 +86,8 @@ bool AuthViewModel::addUser(const QString& username, const QString& displayName,
         return false;
     }
     refreshUsers();
+    qCInfo(lcAuth) << "新增账号" << UserStore::normalizeUsername(username)
+                   << userRoleKey(clampRole(role));
     setError({});
     setMessage(QStringLiteral("已新增 %1").arg(UserStore::normalizeUsername(username)));
     return true;
@@ -101,6 +109,8 @@ bool AuthViewModel::setUserEnabled(const QString& username, bool enabled)
         return false;
     }
     refreshUsers();
+    qCInfo(lcAuth) << "账号" << UserStore::normalizeUsername(username)
+                   << (enabled ? "启用" : "停用");
     setError({});
     setMessage(enabled ? QStringLiteral("已启用") : QStringLiteral("已停用"));
     return true;
@@ -123,6 +133,8 @@ bool AuthViewModel::setUserRole(const QString& username, int role)
         return false;
     }
     refreshUsers();
+    qCInfo(lcAuth) << "账号角色" << UserStore::normalizeUsername(username)
+                   << userRoleKey(next);
     setError({});
     setMessage(QStringLiteral("角色已更新"));
     return true;
@@ -163,6 +175,7 @@ bool AuthViewModel::resetPassword(const QString& username, const QString& passwo
         return false;
     }
     refreshUsers();
+    qCInfo(lcAuth) << "口令已重置" << UserStore::normalizeUsername(username);
     setError({});
     setMessage(QStringLiteral("口令已重置"));
     return true;
@@ -180,6 +193,7 @@ bool AuthViewModel::removeUser(const QString& username)
         return false;
     }
     refreshUsers();
+    qCInfo(lcAuth) << "删除账号" << UserStore::normalizeUsername(username);
     setError({});
     setMessage(QStringLiteral("已删除"));
     return true;

@@ -47,6 +47,6 @@ Windows 本机已构建，数据集在仓库根（含 `metal_nut/`）。`models/
 - `--batch` 图像级默认分数过线，另打面积门对照列。DL 默认 DirectML（失败回 CPU）；`--provider cpu|dml|auto`。
 - `--overflow block|drop` 只影响取流队列（Folder 默认 block，保证跑完一类 test）。
 - `--live-smoke` 关闭连续 NG 联锁，应跑完一类 test 后退出 0。
-- `--webcam-smoke` 限时跑本机摄像头（默认 8 秒）；打不开设备退出 2，不崩。
+- `--webcam-smoke` 限时打开本机摄像头（默认 8 秒）后退出 0；打不开设备退出 2，不崩。停线若堵在 DirectShow `read()`，超时返回，不挂死进程。
 
 构建、标定缓存、新类别接入见 [DEVELOPMENT.md](DEVELOPMENT.md) 第 2 / 5 节。新类别不改代码：数据集根放入 `<类>/train/good` + `<类>/test/...`，DL 再放 `models/<类>/weights/onnx/<类>.onnx`（标定至少 3 张良品）。无专表工作点时用 k=3 / 面积门 1000。

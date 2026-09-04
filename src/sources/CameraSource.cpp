@@ -1,4 +1,5 @@
 #include "sources/CameraSource.h"
+#include "log/AppLog.h"
 
 CameraSource::CameraSource(QObject* parent)
     : IFrameSource(parent)
@@ -7,6 +8,7 @@ CameraSource::CameraSource(QObject* parent)
 
 bool CameraSource::start()
 {
+    qCWarning(lcSource) << "海康离线（P4 实机）。本机摄像头走 WebcamSource，模拟取流走 FolderSource。";
     emit errorOccurred(QStringLiteral(
         "海康离线（P4 实机）。本机摄像头走 WebcamSource，模拟取流走 FolderSource。"));
     return false;

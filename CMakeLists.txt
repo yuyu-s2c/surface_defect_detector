@@ -69,6 +69,8 @@ set(PROJECT_SOURCES
     src/auth/UserTypes.h
     src/auth/UserStore.h
     src/auth/UserStore.cpp
+    src/log/AppLog.h
+    src/log/AppLog.cpp
 )
 
 qt_add_executable(surface_defect_detector ${PROJECT_SOURCES})
@@ -145,6 +147,9 @@ target_include_directories(surface_defect_detector PRIVATE
     src/items
     "${ONNXRUNTIME_DIR}/include"
 )
+
+# Release 也保留文件:行，便于把日志寄回来对照。
+target_compile_definitions(surface_defect_detector PRIVATE QT_MESSAGELOGCONTEXT)
 
 target_link_libraries(surface_defect_detector PRIVATE
     Qt6::Quick

@@ -52,8 +52,10 @@ Ninja 不在 PATH，配置必须显式传 `CMAKE_MAKE_PROGRAM`。
 Python 训练仍锁 onnxruntime==1.29.0。）
 
 `--batch` 图像级默认分数过线，另打面积门对照列。`--live-smoke` 关闭连续 NG 联锁。
-`--webcam-smoke` 默认 8 秒；无设备退出 2，不崩。`--overflow block|drop` 只影响取流队列
+`--webcam-smoke` 默认 8 秒；无设备退出 2，不崩。会打开本机摄像头。`--overflow block|drop` 只影响取流队列
 （Folder 默认 block）。`--provider auto|cpu|dml`（默认 auto；`dml` 失败不静默回退）。
+诊断日志默认 `%AppData%/surface_defect_detector/logs/`；`--log-level debug|info|warning`、`--log-file` 可改。
+`--batch` 指标报告仍走 stdout，不经 logger。
 
 ## 3. 架构与目录
 
@@ -66,6 +68,7 @@ surface_defect_detector/
 │   ├── viewmodels/             # MainViewModel + AuthViewModel + 树/框/指标/对比/NG/模拟 DO / 用户表
 │   ├── auth/                   # 本机账号 UserStore（AppData/users.json，SHA-256+盐）
 │   ├── items/InspectionCanvas  # QQuickPaintedItem：缩放平移，GT/检测叠加
+│   ├── log/AppLog.h/.cpp       # QLoggingCategory + 按日文件（AppData/logs）
 │   ├── DetectionController.h/.cpp # 数据集 + 引擎缓存 + 批量编排（GUI/CLI 共用）
 │   ├── InspectionSession.h/.cpp   # 有界队列 + 取流/检测双线程 + 班次摘要
 │   ├── LiveSessionTypes.h
@@ -91,6 +94,8 @@ surface_defect_detector/
 QML 不接触 `cv::Mat` 与引擎实例。GUI 耗时路径走 Controller 工作线程；`--batch` 仍同步。
 取流走 `InspectionSession`（同步 `detect()`）。NG 走 `IRejectSink`（日志 + `_sessions/` + 模拟 DO）。
 GUI 启动先本机登录（操作员锁检测态；工艺员可分析；管理员管账号）。CLI 不登录、不读账号文件。
+诊断日志走 `qCInfo(lcXxx)`，默认 `%AppData%/surface_defect_detector/logs/sdd-yyyy-MM-dd.log`（兼 stderr）。
+`--batch` 每张图的指标仍只打 stdout，不经 logger。`--log-level debug|info|warning`、`--log-file` 可改。
 
 检测态顶栏：模式 / 图源 / 开线。结果轨：开线前配方、开线中本班、停线后摘要。
 分析态顶栏切引擎，右侧参数 / 指标 / 对比。帧率在结果轨配方。对话框走 `AppDialog`。
@@ -189,6 +194,10 @@ DML 含 220 张标定 + 115 张 test：**13.3 s**；CPU **580.4 s**；两边指�
 
 NG 90 = 分数过线（88 TP + 2 good FP，与 108/115 一致）。Webcam 分布外，整班 NG 是预期。
 
+`InspectionSession::stop()` 抓帧线程最多等 8s（检测 20s），超时不无限 `wait()`、不 `delete` 未结束的 `QThread`（与 `WebcamPreview` 相同：DirectShow `read()` 可能不随 `release()` 返回）。`--webcam-smoke` 定时器只退出事件循环，`stop()` 在 `loop.exec()` 之后。
+
+实测（2026-09-04，`--webcam-smoke metal_nut --engine dl --fps 5`，640×480）：**8.85 s**，39 张，有效 4.41 fps，整班 NG，退出 0。
+
 ### 4.5 已交付（细节在阶段史）
 
 | 阶段 | 交付 |
@@ -199,8 +208,9 @@ NG 90 = 分数过线（88 TP + 2 good FP，与 108/115 一致）。Webcam 分布
 | P3.7 | 班次落盘、检测/分析两态、丢最旧帧、迟剔除 |
 | P3.8 | 本机登录 + 三角色用户管理（操作员/工艺员/管理员） |
 | 工位闭环 | 开线自检、模拟 DO 点表、直通率/节拍、连续 NG 联锁 |
-| P4.0 | `WebcamSource` + `WebcamPreview`（切源预览，开线才检测） |
+| P4.0 | `WebcamSource` + `WebcamPreview`（切源预览，开线才检测）；停线超时不堵死 DSHOW `read()` |
 | 可读性 | 检测态顶栏收口、结果轨按班次状态切、摄像头分布外横幅、`AppDialog` |
+| 诊断日志 | `QLoggingCategory`（`app.*`）+ AppData/logs；不改口径、不加日志面板 |
 
 ### 4.6 Phase 4（远期，等实机）
 
@@ -212,7 +222,7 @@ NG 90 = 分数过线（88 TP + 2 good FP，与 108/115 一致）。Webcam 分布
 ## 5. 工程规范
 
 - 提交：用户明确要求才 `git commit` / `push`（见 AGENTS.md）。说明用 `feat:` / `fix:` 前缀。
-- 不入库：`third_party/`、`build*/`、`models/`、`_onboard/`、`_sessions/`；数据集目录只读
+- 不入库：`third_party/`、`build*/`、`models/`、`_onboard/`、`_sessions/`、`logs/`；数据集目录只读
 - 新类别不改 C++ / QML（禁止 `if (category == ...)`）。布局：
 
 ```

@@ -1,12 +1,13 @@
 #include "InspectionSession.h"
 
 #include "ResultExporter.h"
+#include "log/AppLog.h"
 #include "sources/LogRejectSink.h"
 
+#include <QFileInfo>
 #include <QMetaObject>
 #include <QPointer>
 #include <QThread>
-#include <QtDebug>
 
 InspectionSession::InspectionSession(DetectionController& ctrl, QObject* parent)
     : QObject(parent)
@@ -52,6 +53,10 @@ bool InspectionSession::start(std::unique_ptr<IFrameSource> source, const QStrin
 {
     if (m_running.load() || !source || category.isEmpty())
         return false;
+    if (m_grabThread || m_detectThread) {
+        qCWarning(lcSession) << "上一班线程仍在（多半堵在摄像头驱动），无法再开线";
+        return false;
+    }
 
     stop();
 
@@ -87,6 +92,8 @@ bool InspectionSession::start(std::unique_ptr<IFrameSource> source, const QStrin
             this, &InspectionSession::errorOccurred);
 
     if (!m_source->start()) {
+        qCWarning(lcSession) << "图源启动失败 category=" << category
+                             << "session=" << m_sessionId;
         m_source.reset();
         return false;
     }
@@ -101,6 +108,13 @@ bool InspectionSession::start(std::unique_ptr<IFrameSource> source, const QStrin
 
     m_detectThread->start();
     m_grabThread->start();
+    qCInfo(lcSession) << "开线 category=" << category
+                      << "fps=" << m_targetFps
+                      << "overflow=" << (m_overflow == QueueOverflowPolicy::DropOldest
+                                             ? QStringLiteral("drop")
+                                             : QStringLiteral("block"))
+                      << "session=" << m_sessionId
+                      << "dir=" << m_sessionDir;
     return true;
 }
 
@@ -109,6 +123,8 @@ void InspectionSession::stop()
     if (!m_running.load() && !m_grabThread && !m_detectThread)
         return;
 
+    qCInfo(lcSession) << "停线请求 category=" << m_category
+                      << "session=" << m_sessionId;
     m_stopping.store(true);
     ++m_sessionGen;
     m_abort.store(true);
@@ -117,12 +133,11 @@ void InspectionSession::stop()
     m_frameCond.wakeAll();
     m_spaceCond.wakeAll();
 
-    if (m_grabThread) {
-        m_grabThread->wait(8000);
+    if (m_grabThread && !m_grabThread->wait(8000)) {
+        qCWarning(lcSession) << "抓帧线程未在 8s 内退出（read 可能堵在驱动）";
     }
-    if (m_detectThread) {
-        // 等当前这张 detect 结束；DML 单张通常 <200ms，给足余量
-        m_detectThread->wait(20000);
+    if (m_detectThread && !m_detectThread->wait(20000)) {
+        qCWarning(lcSession) << "检测线程未在 20s 内退出";
     }
 
     cleanupThreads();
@@ -133,19 +148,28 @@ void InspectionSession::stop()
 
 void InspectionSession::cleanupThreads()
 {
-    if (m_grabThread) {
-        m_grabThread->wait();
-        delete m_grabThread;
-        m_grabThread = nullptr;
+    // 与 WebcamPreview 相同：DSHOW read() 可能不随 release() 返回。
+    // 超时后不无限等、不 delete 未结束的 QThread，否则 --webcam-smoke / 停线会一直占着相机。
+    auto reap = [](QThread*& t, const char* msg) {
+        if (!t)
+            return true;
+        if (!t->isFinished()) {
+            qCWarning(lcSession) << msg;
+            return false;
+        }
+        delete t;
+        t = nullptr;
+        return true;
+    };
+    const bool grabDone = reap(
+        m_grabThread,
+        "抓帧线程仍堵在驱动，不 delete 未结束的 QThread。");
+    reap(m_detectThread, "检测线程仍未结束，不 delete 未结束的 QThread。");
+    if (grabDone) {
+        m_source.reset();
+        QMutexLocker lock(&m_mutex);
+        m_queue.clear();
     }
-    if (m_detectThread) {
-        m_detectThread->wait();
-        delete m_detectThread;
-        m_detectThread = nullptr;
-    }
-    m_source.reset();
-    QMutexLocker lock(&m_mutex);
-    m_queue.clear();
 }
 
 bool InspectionSession::enqueueFrame(const CapturedFrame& frame)
@@ -216,6 +240,10 @@ void InspectionSession::detectLoop(quint64 gen)
             ? qMax<qint64>(0, (now - frame.grabbedNs) / 1'000'000)
             : 0;
         const bool late = result.detected() && latencyMs > m_ejectWindowMs;
+        qCDebug(lcSession) << QFileInfo(frame.path).fileName()
+                           << (result.detected() ? "NG" : "OK")
+                           << "score=" << result.imageScore
+                           << "lat=" << latencyMs;
 
         LiveInspectedFrame out;
         out.category = m_category;
@@ -283,6 +311,9 @@ void InspectionSession::detectLoop(quint64 gen)
             m_stopReason = QStringLiteral("连续不合格联锁（%1 张）").arg(m_consecutiveNgLimit);
             m_interlock.store(true);
             out.interlockStop = true;
+            qCWarning(lcSession) << "联锁停线" << m_stopReason
+                                 << "consecutiveNg=" << m_consecutiveNg
+                                 << "session=" << m_sessionId;
             m_abort.store(true);
             if (m_source)
                 m_source->stop();
@@ -352,6 +383,12 @@ void InspectionSession::flushSessionLogLocked()
         : 0.0;
     s.effectiveFps = (s.elapsedSec > 0 && m_done > 0) ? m_done / s.elapsedSec : 0.0;
     m_lastSummary = s;
+
+    qCInfo(lcSession) << "班次摘要" << s.sessionId
+                      << "done=" << s.done << "ng=" << s.ng
+                      << "dropped=" << s.dropped << "late=" << s.lateEject
+                      << "fps=" << s.effectiveFps
+                      << (s.stopReason.isEmpty() ? QString() : s.stopReason);
 
     if (!m_sessionDir.isEmpty())
         ResultExporter::exportLiveSession(m_sessionDir, s, m_pieces);

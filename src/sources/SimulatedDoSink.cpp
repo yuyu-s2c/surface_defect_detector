@@ -1,11 +1,11 @@
 #include "sources/SimulatedDoSink.h"
+#include "log/AppLog.h"
 
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QStringConverter>
 #include <QTextStream>
-#include <QtDebug>
 
 SimulatedDoSink::SimulatedDoSink(const QString& sessionDir)
     : m_sessionDir(sessionDir)
@@ -82,7 +82,7 @@ void SimulatedDoSink::reject(const RejectContext& ctx)
         << ctx.latencyMs << ','
         << (ctx.lateEject ? 1 : 0) << '\n';
 
-    qInfo().noquote() << QStringLiteral("[PLC-SIM] %1 PULSE %2ms REJECT %3/%4/%5 score=%6 thresh=%7 latency=%8 ms%9")
+    qCInfo(lcReject).noquote() << QStringLiteral("[PLC-SIM] %1 PULSE %2ms REJECT %3/%4/%5 score=%6 thresh=%7 latency=%8 ms%9")
                              .arg(QString::fromLatin1(kRejectPoint))
                              .arg(kPulseMs)
                              .arg(ctx.category, ctx.frame.defectType, name)
@@ -92,7 +92,7 @@ void SimulatedDoSink::reject(const RejectContext& ctx)
                              .arg(ctx.lateEject ? QStringLiteral(" LATE") : QString());
 
     if (ctx.lateEject) {
-        qInfo().noquote() << QStringLiteral("[PLC-SIM] %1 ON LATE-ALARM %2/%3/%4")
+        qCInfo(lcReject).noquote() << QStringLiteral("[PLC-SIM] %1 ON LATE-ALARM %2/%3/%4")
                                  .arg(QString::fromLatin1(kLatePoint),
                                       ctx.category, ctx.frame.defectType, name);
     }

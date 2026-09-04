@@ -320,7 +320,7 @@ P4 仍等实机。在 3.7 班次骨架上补一条可演示的产线回路，**�
 - 顶栏 `SourceSwitch`（文件夹 / 本机摄像头），写入 QSettings `station/liveSourceKind`
 - 切到本机摄像头即 `WebcamPreview` 无检测预览（15 fps）；开线前释放设备给 `InspectionSession`，停线后回到预览
 - 开线自检：预览已出帧则不再 `probe()`（设备已被预览占用）；否则短开短关，打不开不能确认
-- `--webcam-smoke <类>` 默认 8 秒后 `stop()`；无设备退出 2
+- `--webcam-smoke <类>` 默认 8 秒后停；无设备退出 2。定时器只 `quit` 事件循环，`stop()` 在循环外，避免在 GUI 线程里堵 `wait()`
 - HMI：Webcam 芯片写 **本机摄像头 · OpenCV / WebcamSource**，禁止「相机已连接」
 
 摄像头帧相对 metal_nut/screw 是分布外，整班 NG 是预期。指标仍以 `--batch` / `--live-smoke` 为准。
@@ -357,4 +357,17 @@ P4 仍等实机。在 3.7 班次骨架上补一条可演示的产线回路，**�
 - 班次 `operator` 字段跟登录显示名，不再手填
 
 验证：CLI 回归同口径；GUI 用三个默认账号各登一次，操作员看不到分析台，管理员能增删改账号。
+
+### 诊断日志（无新阶段号）
+
+不改算法、工作点、`--batch` stdout 口径，不加 GUI 日志面板。把散落的 `qInfo`/`qWarning` 收成 Qt `QLoggingCategory`，方便后续海康 / 真实 DO 迭代时对着文件查。
+
+做了：
+
+- `src/log/AppLog`：`qInstallMessageHandler` 写 `%AppData%/surface_defect_detector/logs/sdd-yyyy-MM-dd.log`，兼 stderr；`--log-level` / `--log-file`；`QT_MESSAGELOGCONTEXT`
+- 分类：`app` / `app.auth` / `app.engine` / `app.session` / `app.source` / `app.reject` / `app.gui`
+- 开停线、登录（不含口令）、引擎准备、图源失败走 info/warning；取流按帧只 `qCDebug(lcSession)`
+- `LogRejectSink` / `SimulatedDoSink` 仍打 `[DO] REJECT` / `[PLC-SIM]`，改走 `lcReject`
+
+验证日志接入时 `--webcam-smoke` 曾在停线后卡住：`cleanupThreads()` 在 8s 超时后仍无限 `wait()`，DirectShow `read()` 不随 `release()` 返回。已与 `WebcamPreview` 对齐——超时打 warning、不 delete 未结束线程；冒烟定时器改为只退出事件循环。2026-09-04 再跑：8.85 s、39 张、退出 0。
 

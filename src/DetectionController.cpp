@@ -9,7 +9,7 @@
 #include <QMutexLocker>
 #include <QPointer>
 #include <QRunnable>
-#include <QtDebug>
+#include "log/AppLog.h"
 
 namespace {
 
@@ -281,7 +281,7 @@ IDetectionEngine* DetectionController::engineFor(const QString& category)
     if (kind == EngineKind::DL) {
         const QString modelPath = resolveOnnxModelPath(root, category);
         if (modelPath.isEmpty()) {
-            qWarning() << "DL 模型不存在，试过:"
+            qCWarning(lcEngine) << "DL 模型不存在，试过:"
                        << onnxExportedPath(root, category)
                        << "和" << onnxFallbackPath(root, category);
             return nullptr;

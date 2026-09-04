@@ -39,6 +39,6 @@ Phase 4 is still only two swaps: implement `CameraSource` (`overflowPolicy()` al
 ./build/surface_defect_detector.exe --webcam-smoke metal_nut --engine dl --fps 15 --seconds 8
 ```
 
-`--batch` uses the same metrics as DEVELOPMENT.md §4 and does not read GUI settings, work orders, or the interlock. Image-level defaults to score-over-threshold (area gate is a comparison column). `--live-smoke` keeps the consecutive-NG interlock off so a category finishes. `--webcam-smoke` runs a timed webcam session (default 8 s); no device → exit 2, no crash.
+`--batch` uses the same metrics as DEVELOPMENT.md §4 and does not read GUI settings, work orders, or the interlock. Image-level defaults to score-over-threshold (area gate is a comparison column). `--live-smoke` keeps the consecutive-NG interlock off so a category finishes. `--webcam-smoke` opens the laptop camera for a timed session (default 8 s) then exits 0; no device → exit 2, no crash. If DirectShow `read()` blocks on stop, the process times out instead of hanging.
 
 New category, no code change: drop `<cat>/train/good` and `<cat>/test/...` at the dataset root; for DL also place `models/<cat>/weights/onnx/<cat>.onnx` (calibration needs at least 3 good images). Unknown categories use k=3 / area gate 1000. Layout: [DEVELOPMENT.md](DEVELOPMENT.md) §5.

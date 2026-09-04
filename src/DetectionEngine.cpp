@@ -1,4 +1,5 @@
 #include "DetectionEngine.h"
+#include "log/AppLog.h"
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -18,8 +19,10 @@ bool DetectionEngine::buildReference(const QStringList& goodImagePaths)
 {
     m_referenceMean.release();
     m_referenceStd.release();
-    if (goodImagePaths.isEmpty())
+    if (goodImagePaths.isEmpty()) {
+        qCWarning(lcEngine) << "传统引擎参考图列表为空";
         return false;
+    }
 
     // 两遍累加求逐像素均值与标准差（CV_64F 累加防溢出）
     cv::Mat sum, sumSq;
@@ -48,8 +51,10 @@ bool DetectionEngine::buildReference(const QStringList& goodImagePaths)
         sumSq += f;
         ++n;
     }
-    if (n == 0)
+    if (n == 0) {
+        qCWarning(lcEngine) << "传统引擎无有效良品图";
         return false;
+    }
 
     cv::Mat mean = sum / n;
     cv::Mat var = sumSq / n - mean.mul(mean);
@@ -63,6 +68,8 @@ bool DetectionEngine::buildReference(const QStringList& goodImagePaths)
     mean.convertTo(m_referenceMean, CV_32F);
     stddev.convertTo(m_referenceStd, CV_32F);
     m_templateSize = m_referenceMean.size();
+    qCInfo(lcEngine) << "传统参考模型" << n << "张"
+                     << m_templateSize.width << "x" << m_templateSize.height;
     return true;
 }
 

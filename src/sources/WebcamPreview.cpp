@@ -1,8 +1,7 @@
 #include "sources/WebcamPreview.h"
+#include "log/AppLog.h"
 
 #include "ImageConvert.h"
-
-#include <QDebug>
 
 WebcamPreview::WebcamPreview(QObject* parent)
     : QObject(parent)
@@ -56,7 +55,7 @@ void WebcamPreview::stop()
     m_source.stop();
     if (m_thread) {
         if (!m_thread->wait(8000)) {
-            qWarning() << "WebcamPreview 抓帧线程未在 8s 内退出（read 可能堵在驱动）。不 delete 未结束的 QThread。";
+            qCWarning(lcSource) << "WebcamPreview 抓帧线程未在 8s 内退出（read 可能堵在驱动）。不 delete 未结束的 QThread。";
         }
         if (m_thread->isFinished()) {
             delete m_thread;

@@ -1,4 +1,5 @@
 #include "UserStore.h"
+#include "log/AppLog.h"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -44,15 +45,20 @@ bool UserStore::load()
     if (!f.exists()) {
         seedDefaults();
         m_seededThisRun = true;
+        qCInfo(lcAuth) << "账号簿不存在，写入默认账号" << m_path;
         return save();
     }
-    if (!f.open(QIODevice::ReadOnly))
+    if (!f.open(QIODevice::ReadOnly)) {
+        qCWarning(lcAuth) << "无法读取账号簿" << m_path;
         return false;
+    }
 
     const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
     f.close();
-    if (!doc.isObject())
+    if (!doc.isObject()) {
+        qCWarning(lcAuth) << "账号簿格式无效" << m_path;
         return false;
+    }
 
     const QJsonArray arr = doc.object().value(QStringLiteral("users")).toArray();
     for (const QJsonValue& v : arr) {
@@ -76,8 +82,10 @@ bool UserStore::load()
     if (m_users.isEmpty()) {
         seedDefaults();
         m_seededThisRun = true;
+        qCWarning(lcAuth) << "账号簿无有效用户，重新写入默认账号" << m_path;
         return save();
     }
+    qCInfo(lcAuth) << "账号簿" << m_path << "用户数" << m_users.size();
     return true;
 }
 
@@ -99,8 +107,10 @@ bool UserStore::save() const
     root.insert(QStringLiteral("users"), arr);
 
     QSaveFile f(m_path);
-    if (!f.open(QIODevice::WriteOnly))
+    if (!f.open(QIODevice::WriteOnly)) {
+        qCWarning(lcAuth) << "无法写入账号簿" << m_path;
         return false;
+    }
     f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
     return f.commit();
 }

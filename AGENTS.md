@@ -32,7 +32,8 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
 ./build/surface_defect_detector.exe --batch metal_nut --engine dl  # DL，默认 DirectML
 # 取流冒烟（可选）：./build/surface_defect_detector.exe --live-smoke metal_nut --engine dl --fps 5
 # 丢最旧帧冒烟：./build/surface_defect_detector.exe --live-smoke metal_nut --engine dl --fps 15 --overflow drop
-# 本机摄像头限时冒烟：./build/surface_defect_detector.exe --webcam-smoke metal_nut --engine dl --fps 5
+# 本机摄像头限时冒烟（会打开相机，先告诉用户）：
+# ./build/surface_defect_detector.exe --webcam-smoke metal_nut --engine dl --fps 5
 ```
 
 ## 环境事实（已核实，勿再探测）
@@ -73,13 +74,15 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
   左栏数据集树用官方 `TreeViewDelegate`，点叶子节点经 `selectFromModelIndex` 加载。
   取流中不要选图 / 切引擎 / 切图源 / 跑批量。操作员不能进分析台、改引擎/参数/数据集根。
   不要接域控或云账号；口令只落本机 `users.json`（SHA-256+盐）。
+  诊断日志用 `qCInfo(lcXxx)` / `qCWarning(lcXxx)`（`#include "log/AppLog.h"`），不要再裸 `qDebug`。
+  默认写 `%AppData%/surface_defect_detector/logs/`；口令、盐哈希、每帧检测结果不要走 info。
 - **不要动数据集**：metal_nut/、screw/ 只读（顶层 train/、test/、ground_truth/）。
   曾因解压套一层出现 metal_nut/metal_nut、screw/screw，已删除；若再出现则忽略。
 - **新类别**：按 MVTec 布局放入根下即可被树扫到；ONNX 放
   `models/<类>/weights/onnx/<类>.onnx`。禁止再加 `if (category == "xxx")`；
   无专表工作点走 `DLParams::defaults()`（k=3 / 面积门 1000）。训练脚本仍只认
   metal_nut / screw，本阶段不为刷表再训新类。
-- **不入库**：third_party/、build*/、models/、_onboard/、_sessions/（见 .gitignore）。
+- **不入库**：third_party/、build*/、models/、_onboard/、_sessions/、logs/（见 .gitignore）。
 - **不执行 git 提交/推送等变更操作**，除非用户明确要求。
 - 代码注释用中文，风格对齐现有文件（解释"为什么"，关键实测依据写入注释）。
 
@@ -89,7 +92,7 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
 - 两个类别的 `--batch` 模式跑完不崩溃
 - 改取流时另跑 `--live-smoke metal_nut --engine dl --fps 5`（115 张跑完、退出 0）
   以及改队列策略时 `--live-smoke metal_nut --engine dl --fps 15 --overflow drop`
-- 改本机摄像头时另跑 `--webcam-smoke metal_nut --engine dl --fps 5`（有设备：数秒后退出 0；无设备：退出 2 不崩）
+- 改本机摄像头时另跑 `--webcam-smoke metal_nut --engine dl --fps 5`（会打开本机摄像头，先告诉用户；有设备：约 8s 后退出 0，不要无限等；无设备：退出 2 不崩）
 - 指标口径固定用 ResultEvaluator（像素级 P/R/F1/IoU + 图像级检出率）。
   图像级默认分数过线，`--batch` 另打面积门对照列。像素级与 v0.1 基线
   （DEVELOPMENT.md 第 4 节表格）同口径对比

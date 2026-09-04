@@ -1,8 +1,7 @@
 #include "sources/FolderSource.h"
+#include "log/AppLog.h"
 
 #include <opencv2/imgcodecs.hpp>
-
-#include <QDebug>
 
 FolderSource::FolderSource(QObject* parent)
     : IFrameSource(parent)
@@ -106,7 +105,7 @@ bool FolderSource::grab(CapturedFrame& out)
 
         cv::Mat img = cv::imread(item.path.toLocal8Bit().constData(), cv::IMREAD_COLOR);
         if (img.empty()) {
-            qWarning() << "FolderSource 跳过无法读取的图：" << item.path;
+            qCWarning(lcSource) << "FolderSource 跳过无法读取的图：" << item.path;
             continue;
         }
 

@@ -15,6 +15,9 @@ _onboard/
 # Phase 3.7 取流班次落盘（NG 叠图 + CSV）
 _sessions/
 
+# 诊断日志（--log-file ./logs 时）
+logs/
+
 # Phase 2 训练侧：Python venv 与下载缓存（anomalib 预训练权重、imagenette）
 tools/training/.venv/
 tools/training/.cache/

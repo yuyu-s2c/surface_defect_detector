@@ -4,6 +4,7 @@
 #include "MainViewModel.h"
 #include "ResultEvaluator.h"
 #include "ResultExporter.h"
+#include "log/AppLog.h"
 #include "sources/CompositeRejectSink.h"
 #include "sources/FileRejectSink.h"
 #include "sources/FolderSource.h"
@@ -28,6 +29,33 @@
 #include <QWindow>
 
 #include <memory>
+
+static bool installAppLog(QString* error)
+{
+    AppLog::Options opt;
+    if (!AppLog::parseOptions(QCoreApplication::arguments(), &opt, error))
+        return false;
+    AppLog::install(opt);
+    return true;
+}
+
+static const char* engineLabel(EngineKind kind)
+{
+    return kind == EngineKind::DL ? "dl" : "cv";
+}
+
+static const char* epLabel(OrtEpKind ep)
+{
+    switch (ep) {
+    case OrtEpKind::Cpu:
+        return "cpu";
+    case OrtEpKind::Dml:
+        return "dml";
+    case OrtEpKind::Auto:
+    default:
+        return "auto";
+    }
+}
 
 // 在可执行文件的上级/上上级目录中寻找数据集根（含 metal_nut、screw 等类别目录）
 static QString locateDatasetRoot()
@@ -75,9 +103,14 @@ static int runBatch(const QString& categoryArg, EngineKind engineKind, OrtEpKind
     }
 
     if (datasetRoot.isEmpty()) {
+        qCWarning(lcApp) << "未找到数据集根目录";
         out << "ERROR: 未找到数据集根目录（上级/上上级目录中没有 metal_nut、screw 等类别目录）\n";
         return 2;
     }
+    qCInfo(lcApp) << "模式 batch 类别" << category
+                  << "引擎" << engineLabel(engineKind)
+                  << "provider" << epLabel(epKind)
+                  << "数据集" << datasetRoot;
 
     DetectionController ctrl;
     ctrl.setEngineKind(engineKind);
@@ -234,9 +267,15 @@ static int runLiveSmoke(const QString& categoryArg, EngineKind engineKind, OrtEp
     }
 
     if (datasetRoot.isEmpty()) {
+        qCWarning(lcApp) << "未找到数据集根目录";
         out << "ERROR: 未找到数据集根目录\n";
         return 2;
     }
+    qCInfo(lcApp) << "模式 live-smoke 类别" << category
+                  << "引擎" << engineLabel(engineKind)
+                  << "provider" << epLabel(epKind)
+                  << "fps" << fps
+                  << "数据集" << datasetRoot;
 
     DetectionController ctrl;
     ctrl.setEngineKind(engineKind);
@@ -400,12 +439,20 @@ static int runWebcamSmoke(const QString& categoryArg, EngineKind engineKind, Ort
     }
 
     if (datasetRoot.isEmpty()) {
+        qCWarning(lcApp) << "未找到数据集根目录";
         out << "ERROR: 未找到数据集根目录\n";
         return 2;
     }
+    qCInfo(lcApp) << "模式 webcam-smoke 类别" << category
+                  << "引擎" << engineLabel(engineKind)
+                  << "provider" << epLabel(epKind)
+                  << "fps" << fps
+                  << "device" << device
+                  << "数据集" << datasetRoot;
 
     QString probeDetail;
     if (!WebcamSource::probe(device, &probeDetail)) {
+        qCWarning(lcApp) << probeDetail;
         out << "ERROR: " << probeDetail << "\n";
         return 2;
     }
@@ -511,7 +558,8 @@ static int runWebcamSmoke(const QString& categoryArg, EngineKind engineKind, Ort
         out << "ERROR: InspectionSession 启动失败（本机摄像头打不开）\n";
         return 2;
     }
-    QTimer::singleShot(seconds * 1000, &session, [&session]() { session.stop(); });
+    // 只退出事件循环；stop() 放在 loop 之后，避免在 GUI 线程里堵死 wait。
+    QTimer::singleShot(seconds * 1000, &loop, &QEventLoop::quit);
     loop.exec();
     session.stop();
     const double elapsed = wall.elapsed() / 1000.0;
@@ -644,8 +692,14 @@ static int runGui(int argc, char* argv[])
     QCoreApplication::setOrganizationName(QStringLiteral("surface_defect_detector"));
     QCoreApplication::setApplicationName(QStringLiteral("surface_defect_detector"));
     QCoreApplication::setApplicationVersion(QStringLiteral("0.1"));
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.1"));
     QQuickStyle::setStyle(QStringLiteral("Basic"));
+
+    QString logErr;
+    if (!installAppLog(&logErr)) {
+        QTextStream(stderr) << logErr << '\n';
+        return 2;
+    }
+    qCInfo(lcApp) << "模式 gui";
 
     auto* vm = new MainViewModel(&app);
     auto* auth = new AuthViewModel(&app);
@@ -658,9 +712,8 @@ static int runGui(int argc, char* argv[])
     engine.rootContext()->setContextProperty(QStringLiteral("auth"), auth);
     QObject::connect(&engine, &QQmlEngine::warnings,
                      [](const QList<QQmlError>& list) {
-                         QTextStream err(stderr);
                          for (const QQmlError& e : list)
-                             err << e.toString() << '\n';
+                             qCWarning(lcGui) << e.toString();
                      });
     QObject::connect(
         &engine, &QQmlApplicationEngine::objectCreationFailed,
@@ -668,11 +721,13 @@ static int runGui(int argc, char* argv[])
         Qt::QueuedConnection);
     engine.loadFromModule("SurfaceDefect", "LoginWindow");
     if (engine.rootObjects().isEmpty()) {
+        qCWarning(lcGui) << "QML 加载失败（SurfaceDefect/LoginWindow）";
         QTextStream(stderr) << "ERROR: QML 加载失败（SurfaceDefect/LoginWindow）\n";
         return 1;
     }
     auto* loginWin = qobject_cast<QWindow*>(engine.rootObjects().constFirst());
     if (!loginWin) {
+        qCWarning(lcGui) << "登录窗根对象不是 Window";
         QTextStream(stderr) << "ERROR: 登录窗根对象不是 Window\n";
         return 1;
     }
@@ -701,12 +756,18 @@ int main(int argc, char* argv[])
         QCoreApplication core(argc, argv);
         QCoreApplication::setOrganizationName(QStringLiteral("surface_defect_detector"));
         QCoreApplication::setApplicationName(QStringLiteral("surface_defect_detector"));
+        QString logErr;
+        if (!installAppLog(&logErr)) {
+            QTextStream(stderr) << logErr << '\n';
+            return 2;
+        }
         const int catIdx = liveSmokeIdx >= 0 ? liveSmokeIdx
                           : (webcamSmokeIdx >= 0 ? webcamSmokeIdx : batchIdx);
         if (catIdx + 1 >= raw.size()) {
             QTextStream(stderr) << "用法: surface_defect_detector --batch|--live-smoke|--webcam-smoke <类别>"
                                    " [--engine cv|dl] [--provider auto|cpu|dml] [--fps N]"
-                                   " [--overflow block|drop] [--device N] [--seconds N]\n";
+                                   " [--overflow block|drop] [--device N] [--seconds N]"
+                                   " [--log-level debug|info|warning] [--log-file 路径]\n";
             return 2;
         }
         EngineKind engineKind = EngineKind::Traditional;
