@@ -689,6 +689,8 @@ static void placeLoginWindow(QWindow* win)
 static int runGui(int argc, char* argv[])
 {
     QGuiApplication app(argc, argv);
+    // 登录窗藏掉的瞬间主窗可能还没 show；默认 true 会当成最后一扇窗关了直接 quit。
+    app.setQuitOnLastWindowClosed(false);
     QCoreApplication::setOrganizationName(QStringLiteral("surface_defect_detector"));
     QCoreApplication::setApplicationName(QStringLiteral("surface_defect_detector"));
     QCoreApplication::setApplicationVersion(QStringLiteral("0.1"));
@@ -719,24 +721,33 @@ static int runGui(int argc, char* argv[])
         &engine, &QQmlApplicationEngine::objectCreationFailed,
         &app, []() { QCoreApplication::exit(1); },
         Qt::QueuedConnection);
+    // 两个独立根窗口：Main 不能挂在 LoginWindow 里，否则藏登录窗时主窗当子窗口一起没了。
     engine.loadFromModule("SurfaceDefect", "LoginWindow");
-    if (engine.rootObjects().isEmpty()) {
-        qCWarning(lcGui) << "QML 加载失败（SurfaceDefect/LoginWindow）";
-        QTextStream(stderr) << "ERROR: QML 加载失败（SurfaceDefect/LoginWindow）\n";
+    engine.loadFromModule("SurfaceDefect", "Main");
+    if (engine.rootObjects().size() < 2) {
+        qCWarning(lcGui) << "QML 加载失败（SurfaceDefect/LoginWindow 或 Main）";
+        QTextStream(stderr) << "ERROR: QML 加载失败（SurfaceDefect/LoginWindow 或 Main）\n";
         return 1;
     }
-    auto* loginWin = qobject_cast<QWindow*>(engine.rootObjects().constFirst());
-    if (!loginWin) {
-        qCWarning(lcGui) << "登录窗根对象不是 Window";
-        QTextStream(stderr) << "ERROR: 登录窗根对象不是 Window\n";
+    QWindow* loginWin = nullptr;
+    QWindow* mainWin = nullptr;
+    for (QObject* obj : engine.rootObjects()) {
+        if (!loginWin)
+            loginWin = findNamedWindow(obj, QStringLiteral("loginWindow"));
+        if (!mainWin)
+            mainWin = findNamedWindow(obj, QStringLiteral("mainWindow"));
+    }
+    if (!loginWin)
+        loginWin = findNamedWindowFallback(QStringLiteral("loginWindow"));
+    if (!mainWin)
+        mainWin = findNamedWindowFallback(QStringLiteral("mainWindow"));
+    if (!loginWin || !mainWin) {
+        qCWarning(lcGui) << "找不到登录窗或主窗";
+        QTextStream(stderr) << "ERROR: 找不到登录窗或主窗\n";
         return 1;
     }
     placeLoginWindow(loginWin);
-    QWindow* mainWin = findNamedWindow(loginWin, QStringLiteral("mainWindow"));
-    if (!mainWin)
-        mainWin = findNamedWindowFallback(QStringLiteral("mainWindow"));
-    if (mainWin)
-        placeMainWindow(mainWin);
+    placeMainWindow(mainWin);
     loginWin->show();
     loginWin->requestActivate();
     return QGuiApplication::exec();

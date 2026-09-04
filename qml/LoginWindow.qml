@@ -16,15 +16,11 @@ ApplicationWindow {
     font.family: Theme.fontFamily
     font.pixelSize: Theme.bodySize
 
-    // 不要写成 ApplicationWindow 的子控件（会进 contentItem）。
-    // 属性持有独立 native 窗，登录后 visible 跳过去。
-    property Main station: Main {
-        objectName: "mainWindow"
-        visible: auth.loggedIn
-    }
-
-    onClosing: {
-        if (!auth.loggedIn)
+    // 主窗由 C++ 另 load，不要挂在这里：子 Window 会跟登录窗一起藏掉，看起来像闪退。
+    onClosing: (close) => {
+        if (auth.loggedIn)
+            close.accepted = false
+        else
             Qt.quit()
     }
 
