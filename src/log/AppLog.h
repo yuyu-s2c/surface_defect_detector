@@ -5,7 +5,7 @@
 #include <QStringList>
 
 // 诊断分类。新模块声明一个 Q_LOGGING_CATEGORY 即可，不要再裸 qDebug。
-// 口令 / users.json 盐哈希 / 每帧检测结果不要走 info。
+// 密码 / users.json 盐哈希 / 每帧检测结果不要走 info。
 Q_DECLARE_LOGGING_CATEGORY(lcApp)
 Q_DECLARE_LOGGING_CATEGORY(lcAuth)
 Q_DECLARE_LOGGING_CATEGORY(lcEngine)

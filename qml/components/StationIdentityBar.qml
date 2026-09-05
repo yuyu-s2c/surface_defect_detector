@@ -63,7 +63,12 @@ Rectangle {
 
         Text {
             visible: auth.loggedIn
-            text: auth.displayName + "  ·  " + auth.roleLabel
+            // 默认显示名就是角色名（管理员/工艺员/操作员），并排会像坏了。
+            text: {
+                const name = (auth.displayName.length > 0 && auth.displayName !== auth.roleLabel)
+                             ? auth.displayName : auth.username
+                return name + "  ·  " + auth.roleLabel
+            }
             color: Theme.textPrimary
             font.pixelSize: Theme.smallSize
             font.family: Theme.fontFamily

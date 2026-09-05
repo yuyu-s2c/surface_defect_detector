@@ -80,7 +80,7 @@ Rectangle {
                 spacing: 6
                 // 不要写死 leftPadding / indentation：模板会按 depth×箭头宽给 contentItem 让位
 
-                readonly property var idx: tree.modelIndex(row, column)
+                readonly property var idx: tree.index(row, column)
                 readonly property string kind: app.datasetModel.nodeType(idx)
                 readonly property string title: app.datasetModel.displayName(idx)
                 readonly property string defectKey: app.datasetModel.defectType(idx)

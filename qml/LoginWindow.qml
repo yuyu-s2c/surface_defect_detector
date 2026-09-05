@@ -7,12 +7,13 @@ ApplicationWindow {
     id: root
     objectName: "loginWindow"
     title: "登录 — 表面缺陷检测工作站"
-    width: 460
-    height: 560
-    minimumWidth: 420
-    minimumHeight: 480
+    width: 400
+    height: Math.max(360, col.implicitHeight + 56)
+    minimumWidth: 400
+    maximumWidth: 400
+    minimumHeight: 360
     visible: !auth.loggedIn
-    color: Theme.bgApp
+    color: Theme.bgElevated
     font.family: Theme.fontFamily
     font.pixelSize: Theme.bodySize
 
@@ -33,97 +34,86 @@ ApplicationWindow {
         }
     }
 
-    Rectangle {
-        anchors.fill: parent
-        color: Theme.bgApp
+    ColumnLayout {
+        id: col
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: 28
+        spacing: 12
 
-        Rectangle {
-            id: card
-            width: Math.min(400, parent.width - 40)
-            implicitHeight: col.implicitHeight + 48
-            anchors.centerIn: parent
-            radius: Theme.radius
-            color: Theme.bgElevated
-            border.width: 1
-            border.color: Theme.border
+        Text {
+            text: "表面缺陷检测工作站"
+            color: Theme.textPrimary
+            font.pixelSize: Theme.titleSize
+            font.bold: true
+            font.family: Theme.fontFamily
+            Layout.fillWidth: true
+        }
+        Text {
+            text: "本机登录。操作员只跑检测台；工艺员可分析；管理员管账号。"
+            color: Theme.textSecondary
+            font.pixelSize: Theme.smallSize
+            font.family: Theme.fontFamily
+            wrapMode: Text.WordWrap
+            Layout.fillWidth: true
+        }
 
-            ColumnLayout {
-                id: col
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.margins: 24
-                spacing: 12
-
-                Text {
-                    text: "表面缺陷检测工作站"
-                    color: Theme.textPrimary
-                    font.pixelSize: Theme.titleSize
-                    font.bold: true
-                    font.family: Theme.fontFamily
-                    Layout.fillWidth: true
-                }
-                Text {
-                    text: "本机登录。操作员只跑检测台；工艺员可分析；管理员管账号。"
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.smallSize
-                    font.family: Theme.fontFamily
-                    wrapMode: Text.WordWrap
-                    Layout.fillWidth: true
-                }
-
-                Text {
-                    text: "账号"
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.smallSize
-                    font.family: Theme.fontFamily
-                }
-                AppTextField {
-                    id: userField
-                    Layout.fillWidth: true
-                    placeholderText: "用户名"
-                    Keys.onReturnPressed: passField.forceActiveFocus()
-                }
-                Text {
-                    text: "口令"
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.smallSize
-                    font.family: Theme.fontFamily
-                }
-                AppTextField {
-                    id: passField
-                    Layout.fillWidth: true
-                    placeholderText: "口令"
-                    echoMode: TextInput.Password
-                    Keys.onReturnPressed: root.submit()
-                }
-
-                Text {
-                    visible: auth.lastError.length > 0
-                    Layout.fillWidth: true
-                    text: auth.lastError
-                    color: Theme.danger
-                    font.pixelSize: Theme.smallSize
-                    font.family: Theme.fontFamily
-                    wrapMode: Text.WordWrap
-                }
-                Text {
-                    visible: auth.seededThisRun
-                    Layout.fillWidth: true
-                    text: "首次启动已写入 admin / engineer / operator，初始口令与账号相同，登录后请改口令。"
-                    color: Theme.warn
-                    font.pixelSize: Theme.smallSize
-                    font.family: Theme.fontFamily
-                    wrapMode: Text.WordWrap
-                }
-
-                AppButton {
-                    Layout.fillWidth: true
-                    text: "登录"
-                    primary: true
-                    onClicked: root.submit()
-                }
+        Text {
+            text: "账号"
+            color: Theme.textSecondary
+            font.pixelSize: Theme.smallSize
+            font.family: Theme.fontFamily
+        }
+        AppTextField {
+            id: userField
+            Layout.fillWidth: true
+            placeholderText: "用户名"
+            onAccepted: {
+                if (passField.text.length === 0)
+                    passField.forceActiveFocus()
+                else
+                    root.submit()
             }
+        }
+        Text {
+            text: "密码"
+            color: Theme.textSecondary
+            font.pixelSize: Theme.smallSize
+            font.family: Theme.fontFamily
+        }
+        AppTextField {
+            id: passField
+            Layout.fillWidth: true
+            placeholderText: "密码"
+            echoMode: TextInput.Password
+            onAccepted: root.submit()
+        }
+
+        Text {
+            visible: auth.lastError.length > 0
+            Layout.fillWidth: true
+            text: auth.lastError
+            color: Theme.danger
+            font.pixelSize: Theme.smallSize
+            font.family: Theme.fontFamily
+            wrapMode: Text.WordWrap
+        }
+        Text {
+            visible: auth.seededThisRun
+            Layout.fillWidth: true
+            text: "首次启动已写入 admin / engineer / operator，初始密码均为 123456，登录后请改密码。"
+            color: Theme.warn
+            font.pixelSize: Theme.smallSize
+            font.family: Theme.fontFamily
+            wrapMode: Text.WordWrap
+        }
+
+        AppButton {
+            Layout.fillWidth: true
+            text: "登录"
+            primary: true
+            onClicked: root.submit()
         }
     }
 

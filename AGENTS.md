@@ -73,9 +73,9 @@ D:/Qt/Tools/CMake_64/bin/cmake.exe --build build
   Controller 工作线程 + 画布蒙层/底栏进度；`--batch` 仍同步，不读 QSettings、不登录。
   左栏数据集树用官方 `TreeViewDelegate`，点叶子节点经 `selectFromModelIndex` 加载。
   取流中不要选图 / 切引擎 / 切图源 / 跑批量。操作员不能进分析台、改引擎/参数/数据集根。
-  不要接域控或云账号；口令只落本机 `users.json`（SHA-256+盐）。
+  不要接域控或云账号；密码只落本机 `users.json`（SHA-256+盐）。
   诊断日志用 `qCInfo(lcXxx)` / `qCWarning(lcXxx)`（`#include "log/AppLog.h"`），不要再裸 `qDebug`。
-  默认写 `%AppData%/surface_defect_detector/logs/`；口令、盐哈希、每帧检测结果不要走 info。
+  默认写 `%AppData%/surface_defect_detector/logs/`；密码、盐哈希、每帧检测结果不要走 info。
 - **不要动数据集**：metal_nut/、screw/ 只读（顶层 train/、test/、ground_truth/）。
   曾因解压套一层出现 metal_nut/metal_nut、screw/screw，已删除；若再出现则忽略。
 - **新类别**：按 MVTec 布局放入根下即可被树扫到；ONNX 放

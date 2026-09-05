@@ -678,9 +678,9 @@ static void placeLoginWindow(QWindow* win)
     if (extraH <= 0)
         extraH = 32;
 
-    const int innerW = 460;
-    const int innerH = 560;
-    win->resize(innerW, innerH);
+    // 尺寸跟 QML，只居中。不要再 resize 出一圈黑边。
+    const int innerW = win->width() > 0 ? win->width() : 400;
+    const int innerH = win->height() > 0 ? win->height() : 400;
     win->setFramePosition(QPoint(
         avail.x() + (avail.width() - (innerW + extraW)) / 2,
         avail.y() + (avail.height() - (innerH + extraH)) / 2));

@@ -40,7 +40,7 @@ AppDialog {
             Layout.fillWidth: true
             text: root.selectedUser.length > 0
                   ? ("已选 " + root.selectedUser)
-                  : "点一行再改角色 / 停用 / 重置口令 / 删除"
+                  : "点一行再改角色 / 停用 / 重置密码 / 删除"
             color: Theme.textSecondary
             font.pixelSize: Theme.smallSize
             font.family: Theme.fontFamily
@@ -85,7 +85,7 @@ AppDialog {
                 AppTextField {
                     id: passField
                     Layout.fillWidth: true
-                    placeholderText: "口令（新增或重置）"
+                    placeholderText: "密码（新增或重置）"
                     echoMode: TextInput.Password
                 }
 
@@ -163,7 +163,7 @@ AppDialog {
                         }
                     }
                     AppButton {
-                        text: "重置口令"
+                        text: "重置密码"
                         outlined: true
                         enabled: root.selectedUser.length > 0
                         onClicked: auth.resetPassword(root.selectedUser, passField.text)

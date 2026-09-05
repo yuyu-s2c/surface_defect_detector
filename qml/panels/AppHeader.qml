@@ -147,10 +147,10 @@ Rectangle {
             }
             Text {
                 anchors.left: parent.left
-                anchors.right: hintLabel.left
+                anchors.right: hintLabel.visible ? hintLabel.left : parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.leftMargin: 10
-                anchors.rightMargin: 8
+                anchors.rightMargin: hintLabel.visible ? 8 : 10
                 text: row.label
                 color: Theme.textPrimary
                 font.pixelSize: Theme.bodySize
@@ -160,7 +160,6 @@ Rectangle {
             Text {
                 id: hintLabel
                 visible: row.hint.length > 0
-                width: visible ? implicitWidth : 0
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.rightMargin: 10
@@ -217,7 +216,7 @@ Rectangle {
             }
             MenuRule {}
             MenuRow {
-                label: "修改口令"
+                label: "修改密码"
                 rowEnabled: auth.loggedIn
                 onActivated: root.passwordClicked()
             }

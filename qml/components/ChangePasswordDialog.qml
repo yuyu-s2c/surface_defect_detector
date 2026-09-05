@@ -4,7 +4,7 @@ import QtQuick.Layouts
 
 AppDialog {
     id: root
-    title: "修改口令"
+    title: "修改密码"
     width: 400
     standardButtons: Dialog.NoButton
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
@@ -14,7 +14,7 @@ AppDialog {
         spacing: 10
 
         Text {
-            text: "当前口令"
+            text: "当前密码"
             color: Theme.textSecondary
             font.pixelSize: Theme.smallSize
             font.family: Theme.fontFamily
@@ -25,7 +25,7 @@ AppDialog {
             echoMode: TextInput.Password
         }
         Text {
-            text: "新口令"
+            text: "新密码"
             color: Theme.textSecondary
             font.pixelSize: Theme.smallSize
             font.family: Theme.fontFamily
@@ -36,7 +36,7 @@ AppDialog {
             echoMode: TextInput.Password
         }
         Text {
-            text: "确认新口令"
+            text: "确认新密码"
             color: Theme.textSecondary
             font.pixelSize: Theme.smallSize
             font.family: Theme.fontFamily
@@ -80,7 +80,7 @@ AppDialog {
     function submit() {
         if (newField.text !== confirmField.text) {
             hintOk = false
-            hint = "两次新口令不一致"
+            hint = "两次新密码不一致"
             return
         }
         if (auth.changeOwnPassword(oldField.text, newField.text)) {

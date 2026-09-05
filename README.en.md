@@ -15,7 +15,7 @@ Metrics come from `--batch` / `--live-smoke`. Laptop-webcam frames are out-of-di
 
 Windows box, repo root as the dataset root (`metal_nut/` present). ONNX under `models/metal_nut/...` is optional (traditional CV works without it). The GUI is Chinese; quoted labels below match the running app.
 
-1. Run `./build/surface_defect_detector.exe` and sign in locally (first run: `admin` / `engineer` / `operator`, password equals username). Operators stay on Inspect; change parameters as engineer or admin.
+1. Run `./build/surface_defect_detector.exe` and sign in locally (first run: `admin` / `engineer` / `operator`, password `123456`). Operators stay on Inspect; change parameters as engineer or admin.
 2. Open the dataset root. Stay in **检测** (Inspect). Select `metal_nut`. Switch **传统 CV / EfficientAD** above the recipe on the right rail (in **分析** / Analyze the engine switch is in the header; operators cannot switch).
 3. The identity bar should read **相机离线 / 模拟取流 · FolderSource / 模拟 PLC · DO0.0**, never “camera connected”. The header switches **文件夹 / 本机摄像头** (folder is default). Webcam shows a no-detect preview at once, the bar becomes **本机摄像头 · OpenCV / 预览中 · WebcamSource**, and the canvas shows an out-of-distribution banner. Detection starts only after 开线.
 4. Work order defaults to `WO-YYYYMMDD`. Operator name comes from the signed-in display name (not free text). Consecutive-NG defaults to 8; target FPS (1–15) is in the same recipe block (engineer/admin can edit).

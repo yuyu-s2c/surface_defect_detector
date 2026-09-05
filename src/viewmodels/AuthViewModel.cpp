@@ -20,13 +20,13 @@ bool AuthViewModel::login(const QString& username, const QString& password)
 {
     const QString name = UserStore::normalizeUsername(username);
     if (name.isEmpty() || password.isEmpty()) {
-        setError(QStringLiteral("请输入账号和口令"));
+        setError(QStringLiteral("请输入账号和密码"));
         return false;
     }
     const UserRecord* u = m_store.find(name);
     if (!u || !m_store.verifyPassword(*u, password)) {
-        qCWarning(lcAuth) << "登录失败" << name << "口令错误或不存在";
-        setError(QStringLiteral("账号或口令不正确"));
+        qCWarning(lcAuth) << "登录失败" << name << "密码错误或不存在";
+        setError(QStringLiteral("账号或密码不正确"));
         return false;
     }
     if (!u->enabled) {
@@ -59,7 +59,7 @@ bool AuthViewModel::changeOwnPassword(const QString& oldPassword, const QString&
     }
     const UserRecord* u = m_store.find(m_username);
     if (!u || !m_store.verifyPassword(*u, oldPassword)) {
-        setError(QStringLiteral("当前口令不正确"));
+        setError(QStringLiteral("当前密码不正确"));
         return false;
     }
     const QString err = m_store.setPassword(m_username, newPassword);
@@ -67,9 +67,9 @@ bool AuthViewModel::changeOwnPassword(const QString& oldPassword, const QString&
         setError(err);
         return false;
     }
-    qCInfo(lcAuth) << "口令已更新" << m_username;
+    qCInfo(lcAuth) << "密码已更新" << m_username;
     setError({});
-    setMessage(QStringLiteral("口令已更新"));
+    setMessage(QStringLiteral("密码已更新"));
     return true;
 }
 
@@ -175,9 +175,9 @@ bool AuthViewModel::resetPassword(const QString& username, const QString& passwo
         return false;
     }
     refreshUsers();
-    qCInfo(lcAuth) << "口令已重置" << UserStore::normalizeUsername(username);
+    qCInfo(lcAuth) << "密码已重置" << UserStore::normalizeUsername(username);
     setError({});
-    setMessage(QStringLiteral("口令已重置"));
+    setMessage(QStringLiteral("密码已重置"));
     return true;
 }
 

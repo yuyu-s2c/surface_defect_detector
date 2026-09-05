@@ -15,7 +15,7 @@ P1～P3.8、离线工位闭环、P4.0 本机摄像头、工位可读性已完成
 
 Windows 本机已构建，数据集在仓库根（含 `metal_nut/`）。`models/metal_nut/.../metal_nut.onnx` 可选，没有就用传统 CV。
 
-1. 启动 `./build/surface_defect_detector.exe`，本机登录（首次：`admin` / `engineer` / `operator`，口令与账号相同）。操作员只跑检测台；改参数请用工艺员或管理员。
+1. 启动 `./build/surface_defect_detector.exe`，本机登录（首次：`admin` / `engineer` / `operator`，密码均为 `123456`）。操作员只跑检测台；改参数请用工艺员或管理员。
 2. 打开数据集根。顶栏保持 **检测**，左侧点 `metal_nut`。引擎在右侧配方上方切 **传统 CV / EfficientAD**（分析态改在顶栏切；操作员不能切）。
 3. 身份条应为 **相机离线 / 模拟取流 · FolderSource / 模拟 PLC · DO0.0**，不要出现「相机已连接」。
    顶栏可切 **文件夹 / 本机摄像头**（默认文件夹）。切到摄像头后画布立即预览（无检测），身份条改为 **本机摄像头 · OpenCV / 预览中 · WebcamSource**，并出现分布外横幅。开线才检测。

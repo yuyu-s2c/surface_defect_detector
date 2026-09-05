@@ -141,7 +141,7 @@ QString UserStore::addUser(const QString& username, const QString& displayName,
     if (constFind(name))
         return QStringLiteral("账号已存在");
     if (!isValidPassword(password))
-        return QStringLiteral("口令至少 %1 位").arg(kMinPasswordLen);
+        return QStringLiteral("密码至少 %1 位").arg(kMinPasswordLen);
 
     UserRecord u;
     u.username = name;
@@ -200,7 +200,7 @@ QString UserStore::setPassword(const QString& username, const QString& password)
     if (!u)
         return QStringLiteral("账号不存在");
     if (!isValidPassword(password))
-        return QStringLiteral("口令至少 %1 位").arg(kMinPasswordLen);
+        return QStringLiteral("密码至少 %1 位").arg(kMinPasswordLen);
     const QByteArray prevSalt = u->salt;
     const QString prevHash = u->passwordHash;
     u->salt = makeSalt();
@@ -208,7 +208,7 @@ QString UserStore::setPassword(const QString& username, const QString& password)
     if (!save()) {
         u->salt = prevSalt;
         u->passwordHash = prevHash;
-        return persistError(QStringLiteral("改口令"));
+        return persistError(QStringLiteral("改密码"));
     }
     return {};
 }
@@ -313,7 +313,7 @@ void UserStore::seedDefaults()
         u.displayName = display;
         u.role = role;
         u.salt = makeSalt();
-        u.passwordHash = hashPassword(u.salt, name);
+        u.passwordHash = hashPassword(u.salt, QStringLiteral("123456"));
         u.enabled = true;
         m_users.push_back(u);
     };

@@ -5,8 +5,8 @@
 #include <QString>
 #include <QVector>
 
-// 本机账号簿：AppData/users.json。口令 SHA-256(盐 + UTF-8 口令)，不入库、不进 QSettings。
-// 文件不存在时种 admin / engineer / operator（初始口令与账号相同）。
+// 本机账号簿：AppData/users.json。密码 SHA-256(盐 + UTF-8 密码)，不入库、不进 QSettings。
+// 文件不存在时种 admin / engineer / operator（初始密码 123456，方便本机测试）。
 class UserStore
 {
 public:
