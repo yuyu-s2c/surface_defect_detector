@@ -1,14 +1,15 @@
 # 开发文档 — 表面缺陷检测工具
 
-> 现行规格：当前状态、架构、构建、口径表、下一步。阶段怎么做的见 [DEVELOPMENT-HISTORY.md](DEVELOPMENT-HISTORY.md)。
-> 改口径或完成新阶段时更新本文表格；实施细节写进阶段史，不要把日记再堆回这里。
+> 现行规格：当前状态、架构、构建、口径表。本工作区已收工，无下一步。
+> 阶段怎么做的见 [DEVELOPMENT-HISTORY.md](DEVELOPMENT-HISTORY.md)。
+> 改口径时更新本文表格；实施细节写进阶段史，不要把日记再堆回这里。
 
 ## 1. 项目概述
 
 工业产品表面缺陷检测工作站。Qt6 Quick（QML + MVVM）桌面应用：离线批量评估、
 文件夹模拟取流、本机摄像头真取流（P4.0），缺陷叠加并与 ground truth 对比输出指标。
-完整产线对接（海康 + PLC）等实机。识别数字以 `--batch` / `--live-smoke` 为准；
-本机摄像头相对 MVTec 类别是分布外，整班 NG 是预期。
+海康相机与真实 PLC 不在本交付范围（`CameraSource` 保持空壳）。识别数字以
+`--batch` / `--live-smoke` 为准；本机摄像头相对 MVTec 类别是分布外，整班 NG 是预期。
 
 - 数据集：MVTec AD（metal_nut、screw，700×700 PNG）。无监督设定——`train/` 只有良品图，
   `test/` 含各类缺陷图，`ground_truth/` 为像素级标注掩码。
@@ -20,6 +21,8 @@
 - 硬件：RTX 3050 Ti Laptop（4GB 显存），Python 3.12.10
 
 ## 2. 构建与运行
+
+新机从 Gitee 拉下来、用 **Qt Creator** 编译运行，见 [README.md](README.md)「新机上手」。下面是本机命令行口径（工具不在 PATH，给代理和复现用）。
 
 ```bash
 # 配置 + 构建
@@ -109,10 +112,11 @@ GUI 启动先本机登录（操作员锁检测态；工艺员可分析；管理�
 
 ## 4. 当前状态与口径
 
-**已完成** P1～P3.8、离线工位闭环、P4.0 本机摄像头、工位可读性。
+**已收工**（2026-09-05）。P1～P3.8、离线工位闭环、P4.0 本机摄像头、工位可读性、诊断日志已交付。
+硬件不是硬性条件：海康 / 真实 PLC 划出范围，不阻塞收口。
 **冻结** 算法、P2 工作点、`--batch` 口径。不要再训 EfficientAD-S、不要重做 GUI、
 不要用传统 CV 给摄像头刷检出率（分布外）、不要假海康/假 PLC、不要给 screw 做传统配准。
-**下一步** 只有完整 Phase 4：实机到货后填 `CameraSource` + 真实 DO 的 `IRejectSink`。
+**无下一步。** 不要再开阶段、不要预写海康/PLC 协议。
 实施日记：[DEVELOPMENT-HISTORY.md](DEVELOPMENT-HISTORY.md)。
 
 ### 4.1 传统 CV（`--batch metal_nut`，v0.1，仍现行）
@@ -214,12 +218,12 @@ NG 90 = 分数过线（88 TP + 2 good FP，与 108/115 一致）。Webcam 分布
 | 可读性 | 检测态顶栏收口、结果轨按班次状态切、摄像头分布外横幅、`AppDialog` |
 | 诊断日志 | `QLoggingCategory`（`app.*`）+ AppData/logs；不改口径、不加日志面板 |
 
-### 4.6 Phase 4（远期，等实机）
+### 4.6 海康 / 真实 PLC（不在本交付范围）
 
-到货后只换两处，不预写协议：
+已收工，不预写协议、不接假现场总线：
 
-- `CameraSource`：海康 MVS/MVD；`overflowPolicy()` 已是 `DropOldest`。不要用 `WebcamSource` 顶替。
-- 真实 DO 的 `IRejectSink` 加进 `CompositeRejectSink`。不要改 `SimulatedDoSink` 当现场总线。
+- `CameraSource` 保持空壳（`start()` 失败「海康离线」）。`overflowPolicy()` 已是 `DropOldest`。不要用 `WebcamSource` 顶替，也不要当假直播。
+- NG 继续走日志 + `_sessions/` + `SimulatedDoSink`。不要改 `SimulatedDoSink` 当现场总线。
 
 ## 5. 工程规范
 
@@ -238,4 +242,4 @@ NG 90 = 分数过线（88 TP + 2 good FP，与 108/115 一致）。Webcam 分布
   无专表工作点走 `DLParams::defaults()`（k=3 / 面积门 1000）。训练脚本仍只认 metal_nut / screw。
   不提供 `--model`（标定缓存在模型旁，指到别类会污染 `.calib.json`）。
 - 优先用 Qt / OpenCV / 已接入的库；不要手搓官方控件（见 AGENTS.md）
-- 每阶段：更新本文口径表；日记写进 DEVELOPMENT-HISTORY.md；跑两个类别 `--batch` 无崩溃
+- 已收工：不再开阶段。若必须改口径，先改本文表格，日记写进 DEVELOPMENT-HISTORY.md，并跑两个类别 `--batch` 无崩溃

@@ -106,10 +106,10 @@ QString MainViewModel::aboutBody() const
         "权重约定：models/<类别>/weights/onnx/<类别>.onnx。"
         "首次对该执行器标定会扫描 train/good 并写入同目录 .calib.json（v3，按 EP 分键），之后复用缓存。\n\n"
         "图像级判定是分数过线，不是掩码面积。面积门只影响绿叠加和 --batch 对照列。\n\n"
-        "海康相机离线 / 未接 PLC（完整 Phase 4 等实机）。顶栏可切 FolderSource（按帧率吐当前类 test/）或本机 USB 摄像头（WebcamSource）。"
+        "海康相机离线 / 未接 PLC（不在本交付范围）。顶栏可切 FolderSource（按帧率吐当前类 test/）或本机 USB 摄像头（WebcamSource）。"
         "不会把 CameraSource 当假直播。Webcam 帧相对 metal_nut/screw 是分布外，整班 NG 是预期；指标仍以 --batch / --live-smoke 为准。\n\n"
         "不合格走 CompositeRejectSink：日志 + _sessions/ 叠图 CSV + 模拟 DO0.0 脉冲（do_map.csv / do_pulses.csv）。"
-        "连续不合格可联锁停线。实机到货只换 CameraSource 并再加一个真实 DO 的 IRejectSink。");
+        "连续不合格可联锁停线。");
 }
 
 QString MainViewModel::shortcutsHelp() const

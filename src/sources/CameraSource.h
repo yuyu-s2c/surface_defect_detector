@@ -2,7 +2,7 @@
 
 #include "sources/IFrameSource.h"
 
-// 完整 Phase 4 填海康 MVS/MVD。本阶段空实现：start() 失败「海康离线」。
+// 海康不在本交付范围。空实现：start() 失败「海康离线」。
 // 禁止当假直播；本机 USB 走 WebcamSource，回归走 FolderSource。
 class CameraSource : public IFrameSource
 {

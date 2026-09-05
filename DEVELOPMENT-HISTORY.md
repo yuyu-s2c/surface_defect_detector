@@ -1,6 +1,6 @@
 # 阶段实施日记
 
-现行规格、口径表和下一步见 [DEVELOPMENT.md](DEVELOPMENT.md)。这里只留已完成阶段怎么做的、当时界面，以及各节重复的回归记录。数字若与 DEVELOPMENT.md 冲突，以 DEVELOPMENT.md 为准。
+现行规格与口径表见 [DEVELOPMENT.md](DEVELOPMENT.md)（本工作区已收工，无下一步）。这里只留已完成阶段怎么做的、当时界面，以及各节重复的回归记录。数字若与 DEVELOPMENT.md 冲突，以 DEVELOPMENT.md 为准。
 
 ### Phase 1 ✅ 骨架 + 传统 CV 基线（v0.1，已完成）
 
@@ -370,4 +370,10 @@ P4 仍等实机。在 3.7 班次骨架上补一条可演示的产线回路，**�
 - `LogRejectSink` / `SimulatedDoSink` 仍打 `[DO] REJECT` / `[PLC-SIM]`，改走 `lcReject`
 
 验证日志接入时 `--webcam-smoke` 曾在停线后卡住：`cleanupThreads()` 在 8s 超时后仍无限 `wait()`，DirectShow `read()` 不随 `release()` 返回。已与 `WebcamPreview` 对齐——超时打 warning、不 delete 未结束线程；冒烟定时器改为只退出事件循环。2026-09-04 再跑：8.85 s、39 张、退出 0。
+
+### 收工（2026-09-05）
+
+硬件不是硬性条件。本工作区正式收工：不再等海康 / 真实 PLC，不再开阶段。
+`CameraSource` 保持空壳；NG 继续走模拟 DO。不要预写协议、不要假现场总线。
+口径与冻结项见 DEVELOPMENT.md 第 4 节。
 

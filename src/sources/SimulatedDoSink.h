@@ -6,7 +6,7 @@
 #include <QString>
 
 // 面试可见的模拟 PLC/DO：点表 + 脉冲日志落盘，不是实现场总线。
-// P4 到货后另写真实 DO 的 IRejectSink 加进 Composite，不要把本类改成真协议。
+// 真实 PLC 不在本交付范围。不要把本类改成真协议。
 class SimulatedDoSink : public IRejectSink
 {
 public:

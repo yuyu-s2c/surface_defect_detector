@@ -8,8 +8,9 @@
 + EfficientAD ONNX（Phase 2，已收住）。数据集 MVTec AD（metal_nut、screw，
 `train/` 只有良品）。训练见 tools/training/TRAINING_NOTES.md。
 
-已完成到 P3.8 本机登录 + P4.0 本机摄像头 + 工位可读性。海康 `CameraSource` 仍空壳。完整 Phase 4
-（海康/PLC）等实机，只换 `CameraSource` 并加一个真实 DO 的 `IRejectSink`。
+本工作区已收工（2026-09-05）。已交付到 P3.8 本机登录 + P4.0 本机摄像头 + 工位可读性。
+海康 `CameraSource` 保持空壳；海康/真实 PLC 不在本交付范围，硬件不是硬性条件。
+不要再开阶段、不要预写协议、不要假海康/假 PLC。
 切到 Webcam 即 `WebcamPreview` 无检测预览，开线才进 `InspectionSession`。
 
 GUI 启动先登录。操作员锁检测态；工艺员可进分析台；管理员另管本机账号（`AppData/users.json`）。

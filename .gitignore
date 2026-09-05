@@ -9,6 +9,9 @@ models/
 metal_nut/
 screw/
 
+# 发给朋友的依赖压缩包（tools/pack_missing.ps1）
+_dist/
+
 # Phase 3.6 新类接入探针（临时拷贝，不入库）
 _onboard/
 

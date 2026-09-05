@@ -9,7 +9,7 @@
 
 #include <atomic>
 
-// P4.0 本机 USB 摄像头。不是海康：CameraSource 仍空壳等实机。
+// P4.0 本机 USB 摄像头。不是海康：CameraSource 保持空壳（海康不在本交付范围）。
 // overflow 固定丢最旧帧；plannedCount=0（无限流，停线才停）。
 class WebcamSource : public IFrameSource
 {
