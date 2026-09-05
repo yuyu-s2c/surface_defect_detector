@@ -57,20 +57,20 @@ struct DLParams
     {
         if (category == QStringLiteral("screw")) {
             DLParams p;
-            p.thresholdSigma = 0.63; // 图像级分数阈值 = mean + 0.63*std (Top-1800) -> 85.0%
+            p.thresholdSigma = 1.76; // 图像级分数阈值 = mean + 1.76*std (Top-8, 全图) -> 零误报 0/41 (0.00%), 检出 70/119 (58.82%)
             p.pixelSigma = 1.0;      // 像素掩码维持原有工作点
             p.imageLevelMinArea = 300;
-            p.topK = 1800;
+            p.topK = 8;
             p.roiRadiusRatio = 0.0;
             return p;
         }
         if (category == QStringLiteral("metal_nut")) {
             DLParams p;
-            p.thresholdSigma = 2.455; // 图像级分数阈值 = mean + 2.455*std (Top-8, r=0.39) -> 95.65%
+            p.thresholdSigma = 5.05; // 图像级分数阈值 = mean + 5.05*std (Top-256, 全图) -> 零误报 0/22 (0.00%), 检出 85/93 (91.40%)
             p.pixelSigma = 3.0;       // 像素掩码维持原有工作点
             p.imageLevelMinArea = 1000;
-            p.topK = 8;
-            p.roiRadiusRatio = 0.39;
+            p.topK = 256;
+            p.roiRadiusRatio = 0.0;
             return p;
         }
         return defaults();

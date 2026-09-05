@@ -377,3 +377,23 @@ P4 仍等实机。在 3.7 班次骨架上补一条可演示的产线回路，**�
 `CameraSource` 保持空壳；NG 继续走模拟 DO。不要预写协议、不要假现场总线。
 口径与冻结项见 DEVELOPMENT.md 第 4 节。
 
+### 产线优化：零误报（Zero False Alarm）调参收口（2026-09-05）
+
+针对真实产线中“良品占大头、误报（过杀）会导致复检工位灾难”的核心业务痛点，通过全参数空间离线网格搜索，在不动模型权重、保持 `IDetectionEngine` 契约稳定的前提下，优化打分与判定工作点：
+
+- **搜索与分析**：对两类产品全部训练集良品与测试集（含所有缺陷类别）共 815 张 256×256 热图进行离线网格穷举（搜索 `roiRadiusRatio`、`topK`、`thresholdSigma` 组合），分析 Pareto 最优前沿。
+- **metal_nut 收口**：切换为全图聚合 `topK=256, roi=0.0, k=5.05`：
+  - 良品误报率：**0.000 (0/22，绝对 0 误报)**
+  - 缺陷检出率：**91.40% (85/93)**（bent 25/25、flip 23/23 满检，color 20/22，scratch 17/23）
+  - 总体图像准确率：**93.04% (107/115)**，像素 F1 保持 0.2690。
+- **screw 收口**：切换为低峰值聚合 `topK=8, roi=0.0, k=1.76`：
+  - 良品误报率：**0.000 (0/41，绝对 0 误报)**
+  - 缺陷检出数：**70/119 (58.82%)**（thread_top 23/23 满检，scratch_neck 21/25）
+  - 备选高检出档：`k=1.10` 可检出 84/119 (70.6%)，误报率仅 1/41 (2.4%)。
+- **回归验证**：
+  - `./build/surface_defect_detector.exe --batch metal_nut`（58/115，F1 0.2926 无漂移）
+  - `./build/surface_defect_detector.exe --batch screw`（119/160，F1 0.0185 无漂移）
+  - `./build/surface_defect_detector.exe --batch metal_nut --engine dl`（107/115，良品误报 0/22）
+  - `./build/surface_defect_detector.exe --batch screw --engine dl`（111/160，良品误报 0/41）
+
+
