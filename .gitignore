@@ -22,3 +22,6 @@ logs/
 tools/training/.venv/
 tools/training/.cache/
 tools/training/__pycache__/
+
+# AutoDL 上传包（screw + 训练脚本，本机生成）
+sdd-autodl.zip

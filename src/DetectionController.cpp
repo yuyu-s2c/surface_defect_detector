@@ -26,10 +26,14 @@ void applyDLParams(DLDetectionEngine* engine, const DLParams& p)
 {
     const DLParams s = p.sanitized();
     engine->thresholdSigma = s.thresholdSigma;
+    engine->pixelSigma = s.pixelSigma;
     engine->morphCloseKernel = s.morphCloseKernel;
     engine->minDefectArea = s.minDefectArea;
     engine->imageLevelMinArea = s.imageLevelMinArea;
+    engine->topK = s.topK;
+    engine->roiRadiusRatio = s.roiRadiusRatio;
 }
+
 
 // anomalib Engine.export 落点，其次扁平回退。新类接入只放文件，不改这里的拼接规则。
 QString onnxExportedPath(const QString& root, const QString& category)

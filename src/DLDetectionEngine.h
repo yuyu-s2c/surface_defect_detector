@@ -48,18 +48,28 @@ public:
 
     // 可调参数
     int inputSize = 256;             // ONNX 模型输入边长（导出时固定 256×256）
-    double thresholdSigma = 3.0;     // 像素阈值 = 良品热图逐图最大值的均值 + kσ（只切掩码）
+    double thresholdSigma = 3.0;     // 图像级判定阈值 = 良品图像分均值 + kσ
+    double pixelSigma = 3.0;         // 像素阈值 = 良品热图逐图最大值的均值 + kσ（只切掩码）
     int morphCloseKernel = 21;       // 闭运算核（与传统引擎一致）
     int minDefectArea = 100;         // 连通域最小面积（像素）
     int imageLevelMinArea = 1000;    // 叠加/框面积门（对照列；不再驱动 detected()）
+    int topK = 1;                    // 图像级打分采用的前 K 个最大像素均值（1 为单点最大值）
+    double roiRadiusRatio = 0.0;     // 0.0 为全图；>0 为中心圆形 ROI 相对图像尺寸的半径比例
 
 private:
     // 推理得到异常热图并上采样到原图尺寸（CV_32F）；失败返回空 Mat。
-    // nativeMax：256 热图最大值，作图像级分数（上采样前，与 EfficientAD 图像分一致）
-    cv::Mat anomalyMap(const cv::Mat& image, double* nativeMax = nullptr) const;
+    // rawHeat256：256×256 未上采样的原始热图，用于计算图像级分数
+    // nativeMax：256 热图最大值，用于像素阈值标定
+    cv::Mat anomalyMap(const cv::Mat& image, cv::Mat* rawHeat256 = nullptr, double* nativeMax = nullptr) const;
 
-    // 图像级阈值 = mean + kσ（与像素阈同一 k）。无标定则 +inf（空结果不算检出）
+    // 根据 topK 与 roiRadiusRatio 从 256×256 热图计算图像级综合异常分
+    double computeImageScore(const cv::Mat& heat256) const;
+
+    // 图像级阈值 = calibMean + thresholdSigma * calibStd。无标定则 +inf（空结果不算检出）
     double currentImageThreshold() const;
+
+    // 像素级阈值 = pixelMean + pixelSigma * pixelStd。无标定则 +inf
+    double currentPixelThreshold() const;
 
     // useDml 失败抛 Ort::Exception，由 buildReference 决定是否回退 CPU
     void createSession(bool useDml);
@@ -70,8 +80,12 @@ private:
     QString m_activeProvider;     // 给人看
     QString m_calibProviderKey;   // 标定缓存键："dml" / "cpu"
     bool m_loadedCalibFromCache = false;
-    // 良品热图最大值的均值/标准差。detect() 用 mean + kσ 切掩码，改 k 不必重跑标定
+    // 良品图像级分数的均值/标准差。detect() 用 calibMean + thresholdSigma * calibStd 判定
     double m_calibMean = 0.0;
     double m_calibStd = 0.0;
-    std::vector<double> m_imageScores; // 每张 train/good 的 256 热图 max，写入 calib v3 便于对照
+    // 良品逐图最大值均值/标准差。detect() 用 pixelMean + pixelSigma * pixelStd 切掩码
+    double m_pixelMean = 0.0;
+    double m_pixelStd = 0.0;
+    std::vector<double> m_imageScores; // 每张 train/good 的图像分，写入 calib v4
 };
+

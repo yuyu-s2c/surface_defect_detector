@@ -40,10 +40,13 @@ struct TraditionalParams
 
 struct DLParams
 {
-    double thresholdSigma = 3.0;  // 像素阈值 = 良品热图最大值均值 + kσ（只切掩码）
+    double thresholdSigma = 3.0;  // 图像级判定阈值 = 良品图像分均值 + kσ
+    double pixelSigma = 3.0;      // 像素掩码阈值 = 良品热图最大值均值 + kσ（只切掩码）
     int morphCloseKernel = 21;
     int minDefectArea = 100;
     int imageLevelMinArea = 1000; // 叠加/框面积门，对照列用；不再驱动图像级判定
+    int topK = 1;                 // 图像级打分采用的前 K 个最大像素均值（1 为原单点最大值）
+    double roiRadiusRatio = 0.0;  // 0.0 为全图；>0 为以中心为圆心、min(W,H)*ratio 为半径的圆形 ROI
 
     // 类别无关默认（新类接入走这里：k=3 / 面积门 1000 + 图像级分数标定）
     static DLParams defaults() { return {}; }
@@ -54,8 +57,20 @@ struct DLParams
     {
         if (category == QStringLiteral("screw")) {
             DLParams p;
-            p.thresholdSigma = 1.0;
+            p.thresholdSigma = 0.63; // 图像级分数阈值 = mean + 0.63*std (Top-1800) -> 85.0%
+            p.pixelSigma = 1.0;      // 像素掩码维持原有工作点
             p.imageLevelMinArea = 300;
+            p.topK = 1800;
+            p.roiRadiusRatio = 0.0;
+            return p;
+        }
+        if (category == QStringLiteral("metal_nut")) {
+            DLParams p;
+            p.thresholdSigma = 2.455; // 图像级分数阈值 = mean + 2.455*std (Top-8, r=0.39) -> 95.65%
+            p.pixelSigma = 3.0;       // 像素掩码维持原有工作点
+            p.imageLevelMinArea = 1000;
+            p.topK = 8;
+            p.roiRadiusRatio = 0.39;
             return p;
         }
         return defaults();
@@ -65,9 +80,13 @@ struct DLParams
     {
         DLParams p = *this;
         p.thresholdSigma = qBound(0.1, p.thresholdSigma, 8.0);
+        p.pixelSigma = qBound(0.1, p.pixelSigma, 8.0);
         p.morphCloseKernel = sanitizedMorphKernel(p.morphCloseKernel);
         p.minDefectArea = qBound(0, p.minDefectArea, 100000);
         p.imageLevelMinArea = qBound(0, p.imageLevelMinArea, 1000000);
+        p.topK = qBound(1, p.topK, 65536);
+        p.roiRadiusRatio = qBound(0.0, p.roiRadiusRatio, 1.0);
         return p;
     }
 };
+
