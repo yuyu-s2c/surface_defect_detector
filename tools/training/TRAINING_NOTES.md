@@ -196,24 +196,12 @@ GUI 把加载/标定/单张/批量放在工作线程；无缓存时才对全部 
 
 ---
 
-## 9. EfficientAD-M 对照实验（云卡）
-
-现网工位仍是 S @ 256。M 只加通道（约 8M → 21M 参数，ONNX 约 31 → 83 MB），输入仍 256，C++ 契约不变。
-产物隔离在 `models/<类>_m/`，不要覆盖 `models/screw/weights/onnx/screw.onnx`。
-命令和开机清单：[AUTODL.md](AUTODL.md)、[TRAIN.md](TRAIN.md)。
-
-这一枪只打 screw，对照 C++ `--batch screw --engine dl` 的 125/160。
-预期：`manipulated_front` 可能动；`thread_side` 多半不动（细缺陷是分辨率问题，不是通道）。
-不要同时改 `--image-size`。4GB 本机只推、不训。
-
-## 10. 想自己复现时看哪
+## 9. 想自己复现时看哪
 
 ```text
-tools/training/train_efficientad.py   训练 / 测试 / 导出（--model-size medium 写到 <类>_m/）
-tools/training/AUTODL.md              云卡训 M 的开机清单
+tools/training/train_efficientad.py   训练 / 测试 / 导出
 tools/training/TRAIN.md               复制命令
-tools/training/requirements.txt       本机 Windows 锁版本
-tools/training/requirements-autodl.txt  AutoDL（不要装 Windows 的 torch 轮子）
+tools/training/requirements.txt       锁版本
 src/DLDetectionEngine.cpp             ONNX 推理 + 热图后处理 + 图像级分数
 src/EngineParams.h                    默认 k=3 / 面积 1000；仅 screw 为 P2 的 1 / 300
 src/IDetectionEngine.h                DetectionResult：detected() = 分数过线

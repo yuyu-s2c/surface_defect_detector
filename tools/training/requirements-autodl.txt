@@ -1,6 +1,0 @@
-# AutoDL 训练用。镜像已带 PyTorch + CUDA，不要再装 Windows 的 torch==2.13.0+cu126。
-# 装完用 python -c "import torch; print(torch.cuda.is_available(), torch.__version__)" 确认是 True。
-anomalib==2.6.0
-onnx>=1.16
-onnxscript
-opencv-python-headless
